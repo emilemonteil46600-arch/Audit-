@@ -71,6 +71,7 @@
       <button role="tab" data-vue="diagnostic" aria-selected="true">Diagnostic</button>
       <button role="tab" data-vue="methode" aria-selected="false">Méthode</button>
       <button role="tab" data-vue="donnees" aria-selected="false">Données</button>
+      <button role="tab" data-vue="validation" aria-selected="false">Validation</button>
     </nav>
     <div class="actions-entete">
       <button class="bouton" type="button" id="exemple" title="Charger la maison d'exemple (sans carte)"><svg class="ico"><use href="#i-maison"/></svg><span>Exemple</span></button>
@@ -158,7 +159,8 @@ Fiabilité : bonne si δ ≤ 15 %, moyenne si δ ≤ 30 %, faible au-delà</div>
     <section class="bloc">
       <h2><span class="num-etape">5</span> Le calage sur factures</h2>
       <p>Avec les factures, on calcule pour chaque énergie <b>k = facture / calcul</b>. Chaque usage garde son k, même si une action change son énergie : k corrige le comportement réel (occupation, consigne), pas la chaudière. Les gains sont ensuite calculés sur ce modèle calé.</p>
-      <div class="formule">k = consommation facturée / consommation calculée        (0,7 à 1,3 : cohérent)</div>
+      <p>Si tu donnes les <b>DJU de l'année des factures</b>, le calcul est d'abord refait avec le climat de cette année-là : une année froide n'est plus prise pour un bâtiment qui consomme trop. Le résultat reste affiché pour une année normale.</p>
+      <div class="formule">k = consommation facturée / consommation calculée avec les DJU de l'année        (0,7 à 1,3 : cohérent)</div>
     </section>
     <section class="bloc">
       <h2><span class="num-etape">6</span> Les préconisations</h2>
@@ -166,6 +168,22 @@ Fiabilité : bonne si δ ≤ 15 %, moyenne si δ ≤ 30 %, faible au-delà</div>
       <div class="formule">TRB = coût / économie
 TRA = plus petit n tel que Σ (t = 1 → n) économie × (1 + i)^(t−1) / (1 + a)^t ≥ coût
 ✅ à faire si TRA ≤ ½ durée de vie · 🟠 à discuter si TRA ≤ durée de vie · ❌ sinon</div>
+    </section>
+  </div>
+
+  <div class="etapes-methode">
+    <section class="bloc">
+      <h2><span class="num-etape">7</span> Les valeurs qui pèsent le plus</h2>
+      <p>Sur ~300 valeurs, une quinzaine font l'essentiel du résultat. Pour les trouver, on pousse chaque valeur d'exemple de <b>+ 10 %</b> et on regarde ce qui bouge : consommation, facture, temps de retour des actions ✅ / 🟠, verdicts. L'onglet <b>Données</b> les classe pour ton bâtiment : valide ou corrige d'abord le haut de la liste.</p>
+      <div class="formule">élasticité = | résultat(valeur × 1,1) / résultat(valeur) − 1 | / 0,1
+poids = la plus forte des élasticités + 1 par verdict qui change
+Ex. : prix du gaz → facture de la maison : + 392 € sur 4 541 € → élasticité 0,86</div>
+    </section>
+    <section class="bloc">
+      <h2><span class="num-etape">8</span> Valider le moteur</h2>
+      <p>Garde comme <b>cas de référence</b> des bâtiments dont tu connais les factures. L'onglet <b>Validation</b> compare le calcul <i>sans calage</i> aux factures : biais moyen (le moteur surestime-t-il ?), écart moyen, et part des factures qui tombent dans la fourchette. C'est le seul vrai juge des valeurs par défaut.</p>
+      <div class="formule">écart = (calcul − factures) / factures        biais = moyenne des écarts
+Une bonne fourchette contient la plupart des factures.</div>
     </section>
   </div>
 
@@ -204,6 +222,14 @@ Combles (U 1,0 → 0,14) : ΔH = 86 W/K → − 5 031 kWh de gaz ≈ 614 €/an 
     <button class="bouton" type="button" id="reinitialiser-donnees">Remettre les valeurs d'origine</button>
   </div>
   <div id="donnees"></div>
+</main>
+
+<main id="vue-validation" class="page" hidden>
+  <h1>Validation du moteur</h1>
+  <p class="intro">Le moteur tombe-t-il juste ? Compare-le à des bâtiments dont tu connais la <b>vraie consommation</b> (factures) :
+    tes anciens audits, ton logement, des bâtiments publics. Pour en ajouter un : choisis le bâtiment, réponds aux questions comme
+    si tu ne connaissais pas sa consommation, saisis ses factures (onglet Factures), puis « Garder ce cas ».</p>
+  <div id="validation"></div>
 </main>
 
 <footer class="pied">

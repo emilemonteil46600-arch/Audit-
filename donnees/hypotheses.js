@@ -511,9 +511,25 @@
     ['duree.led', 'Durée de vie — LED', 15, 'ans']
   ]);
 
+  /* ---------- Bâtiments types (fictifs) ----------
+     Servent à l'exemple (bouton « Exemple ») et à classer les valeurs qui pèsent le plus
+     quand aucun bâtiment n'est choisi. Pas de vrais bâtiments ici : le dépôt est public. */
+  const s = function (v) { return { valeur: v, origine: 'saisie' }; };
+  const BATIMENTS_TYPES = [
+    { nom: 'Maison de plain-pied de 1970, Toulouse', entrees: {
+      usage: s('logement-individuel'), annee: s(1970), chauffage: s('gaz-ancienne'), departement: s('31'),
+      surfaceSol: s(100), niveaux: s(1), perimetre: s(40), perimetreExpose: s(40), hauteur: s(3) } },
+    { nom: 'Immeuble de logements de 1965, Lyon', entrees: {
+      usage: s('logement-collectif'), annee: s(1965), chauffage: s('gaz-ancienne'), departement: s('69'),
+      surfaceSol: s(400), niveaux: s(5), perimetre: s(90), perimetreExpose: s(70), hauteur: s(15), logements: s(24) } },
+    { nom: 'Bureaux de 1980, Paris', entrees: {
+      usage: s('bureaux'), annee: s(1980), departement: s('75'),
+      surfaceSol: s(1000), niveaux: s(3), perimetre: s(130), perimetreExpose: s(130), hauteur: s(9) } }
+  ];
+
   const HYPOTHESES = {
     SOURCES: SOURCES, VALEURS: VALEURS, PERIODES: PERIODES, USAGES: USAGES, ENERGIES: ENERGIES,
-    CHOIX: CHOIX, ZONES: ZONES, ZONES_SOURCE: ZONES_SOURCE
+    CHOIX: CHOIX, ZONES: ZONES, ZONES_SOURCE: ZONES_SOURCE, BATIMENTS_TYPES: BATIMENTS_TYPES
   };
   global.HYPOTHESES_FLASH = HYPOTHESES;
   if (typeof module !== 'undefined' && module.exports) module.exports = HYPOTHESES;

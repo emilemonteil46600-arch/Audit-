@@ -147,6 +147,51 @@
       '<path d="' + trace + '" class="tres-ligne"/></svg>';
   };
 
+  /* ---------- Nuage « calcul ou factures » (cas de référence) ----------
+     points : [{ x: factures, y: calcul, nom, famille, dedans }] ; seuil : bande ± (ex. 0,15) ;
+     format : nombre → texte. Échelle logarithmique si les bâtiments sont de tailles très différentes. */
+  G.nuage = function (points, seuil, format) {
+    if (!points.length) return '';
+    const l = 520, h = 330, m = { g: 72, d: 14, h: 12, b: 42 };
+    const valeurs = points.reduce(function (t, p) { return t.concat([p.x, p.y]); }, []);
+    let min = Math.min.apply(null, valeurs) * 0.8, max = Math.max.apply(null, valeurs) * 1.15;
+    const log = max / min > 20;
+    if (!log) min = 0;
+    const t = function (v) { return log ? (Math.log10(v) - Math.log10(min)) / (Math.log10(max) - Math.log10(min)) : (v - min) / (max - min); };
+    const x = function (v) { return m.g + t(v) * (l - m.g - m.d); };
+    const y = function (v) { return h - m.b - t(v) * (h - m.h - m.b); };
+    // Graduations : puissances de 10 (log) ou 4 pas réguliers
+    let graduations = [];
+    if (log) {
+      for (let p = Math.ceil(Math.log10(min)); p <= Math.floor(Math.log10(max)); p++) graduations.push(Math.pow(10, p));
+    } else {
+      const pas = Math.pow(10, Math.floor(Math.log10(max / 4)));
+      const n = Math.ceil(max / 4 / pas) * pas;
+      for (let v = n; v < max; v += n) graduations.push(v);
+    }
+    // Bande ± seuil autour de la diagonale, fermée dans les coins du graphique
+    const bas = log ? min : max * 1e-6;
+    const bande = [[bas, bas * (1 + seuil)], [max / (1 + seuil), max], [max, max], [max, max * (1 - seuil)], [bas / (1 - seuil), bas], [bas, bas]]
+      .map(function (c) { return x(Math.min(max, Math.max(min, c[0]))).toFixed(1) + ',' + y(Math.min(max, Math.max(min, c[1]))).toFixed(1); }).join(' ');
+    return '<div class="graphe-nuage"><svg viewBox="0 0 ' + l + ' ' + h + '" role="img" aria-label="Calcul comparé aux factures">' +
+      '<polygon points="' + bande + '" class="nuage-bande"/>' +
+      graduations.map(function (v) {
+        return '<line x1="' + x(v).toFixed(1) + '" x2="' + x(v).toFixed(1) + '" y1="' + m.h + '" y2="' + (h - m.b) + '" class="nuage-grille"/>' +
+          '<line y1="' + y(v).toFixed(1) + '" y2="' + y(v).toFixed(1) + '" x1="' + m.g + '" x2="' + (l - m.d) + '" class="nuage-grille"/>' +
+          '<text x="' + x(v).toFixed(1) + '" y="' + (h - m.b + 16) + '" text-anchor="middle" class="nuage-texte">' + esc(format(v)) + '</text>' +
+          '<text x="' + (m.g - 6) + '" y="' + (y(v) + 4).toFixed(1) + '" text-anchor="end" class="nuage-texte">' + esc(format(v)) + '</text>';
+      }).join('') +
+      '<line x1="' + x(min).toFixed(1) + '" y1="' + y(min).toFixed(1) + '" x2="' + x(max).toFixed(1) + '" y2="' + y(max).toFixed(1) + '" class="nuage-diagonale"/>' +
+      '<text x="' + (l - m.d) + '" y="' + (h - 6) + '" text-anchor="end" class="nuage-axe">Factures →</text>' +
+      '<text x="14" y="' + (h - m.b) + '" class="nuage-axe" transform="rotate(-90 14 ' + (h - m.b) + ')" text-anchor="start">Calcul →</text>' +
+      points.map(function (p) {
+        return '<circle cx="' + x(p.x).toFixed(1) + '" cy="' + y(p.y).toFixed(1) + '" r="7" class="nuage-point f-' + esc(p.famille) + (p.dedans ? '' : ' dehors') + '">' +
+          '<title>' + esc(p.nom) + ' : calcul ' + esc(format(p.y)) + ', factures ' + esc(format(p.x)) + '</title></circle>';
+      }).join('') + '</svg>' +
+      '<div class="nuage-legende"><span><i class="f-logement"></i>Logement</span><span><i class="f-tertiaire"></i>Tertiaire</span>' +
+      '<span><i class="dehors"></i>Hors de la fourchette</span></div></div>';
+  };
+
   /* ---------- Jauge de fiabilité ---------- */
   G.fiabilite = function (niveau) {
     const n = { faible: 1, moyenne: 2, bonne: 3 }[niveau] || 0;

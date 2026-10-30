@@ -16,11 +16,17 @@
   /* ---------- L'état, gardé dans ton navigateur ----------
      saisies : tes réponses (prioritaires) ; carte : ce qui vient de la carte, de la BDNB, des DPE. */
   function etatVide() {
-    return { version: 1, saisies: {}, carte: {}, factures: {}, batiment: null, complements: {}, bouquet: null };
+    return { version: 1, saisies: {}, carte: {}, factures: {}, djuFactures: null, batiment: null, complements: {}, bouquet: null };
   }
   let etat = Object.assign(etatVide(), F.lire('etat.v1', null) || {});
-  let modifs = F.lire('donnees.v1', {}) || {};
+  let modifs = F.lire('donnees.v1', {}) || {};      // tes valeurs (onglet Données)
+  let validees = F.lire('validees.v1', {}) || {};   // valeurs d'exemple vérifiées et gardées : { id: date }
+  let cas = F.lire('cas.v1', []) || [];             // tes cas de référence (onglet Validation)
   let r = null;
+
+  function options() { return { validees: validees, djuFactures: etat.djuFactures }; }
+  function aujourdhui() { return new Date().toISOString().slice(0, 10); }
+  function copie(objet) { return JSON.parse(JSON.stringify(objet)); }
 
   function sauver() { F.ecrire('etat.v1', etat); }
   function entrees() { return Object.assign({}, etat.carte, etat.saisies); }
@@ -33,7 +39,7 @@
 
   function recalculer() {
     try {
-      r = M.diagnostiquer(entrees(), etat.factures, H, modifs);
+      r = M.diagnostiquer(entrees(), etat.factures, H, modifs, options());
     } catch (e) {
       r = { manque: [], erreur: e.message };
     }
@@ -326,7 +332,10 @@
           '<div class="facture-info"><small>' + esc(AIDES_FACTURES[en.id] || '') + '</small><span data-calcul="' + en.id + '"></span></div></div>';
       }).join('') +
       '<button type="button" class="bouton discret" data-action="toutes-energies">Afficher toutes les énergies</button>' +
-      '<div id="f-bilan"></div>';
+      '<div class="facture facture-dju"><label class="champ"><span class="etiquette-champ">DJU de l’année des factures <small>(facultatif)</small></span>' +
+      '<input type="text" inputmode="decimal" data-dju="1" autocomplete="off"></label>' +
+      '<div class="facture-info"><small>Base 18 °C, station météo la plus proche. Vide = année normale.</small><span data-dju-normal></span></div></div>' +
+      '<div id="f-bilan"></div><div id="f-cas"></div>';
   }
 
   let toutesEnergies = false;
@@ -343,10 +352,19 @@
       $('[data-calcul="' + en.id + '"]', bloc).innerHTML = (utilisee ? 'calcul : ' + energie(utilisee.facture) : 'pas utilisée par le calcul') +
         (k ? ' · <b class="k ' + (k < 0.7 || k > 1.3 ? 'k-ecart' : 'k-ok') + '">k = ' + nb(k, 2) + '</b>' : '');
     });
+    const champDju = $('[data-dju]');
+    if (champDju !== document.activeElement) {
+      champDju.value = etat.djuFactures ? nb(etat.djuFactures) : '';
+      champDju.placeholder = r && r.params ? 'normale : ' + nb(r.params.dju) : '';
+    }
+    $('[data-dju-normal]').textContent = r && r.params ? 'Zone ' + r.params.zone + ' : ' + nb(r.params.dju) + ' DJU en année normale' : '';
     const bilan = $('#f-bilan');
-    if (!r || !r.calage) { bilan.innerHTML = ''; return; }
+    if (!r || !r.calage) { bilan.innerHTML = ''; $('#f-cas').innerHTML = ''; return; }
     const ecarts = Object.keys(r.calage.coefs).filter(function (e) { const k = r.calage.coefs[e]; return k < 0.7 || k > 1.3; });
     bilan.innerHTML = (r.calage.actif ? '<p class="alerte ok">' + ico('check') + ' Modèle calé sur tes factures : la fourchette passe à ± ' + pct(r.rel) + '.</p>' : '') +
+      (r.calage.djuFactures ? '<p class="alerte info">Factures d’une année à ' + nb(r.calage.djuFactures) + ' DJU, soit ' +
+        (r.calage.ecartClimat >= 0 ? '+ ' : '− ') + pct(Math.abs(r.calage.ecartClimat)) + ' par rapport à l’année normale : le calage en tient compte, ' +
+        'et le résultat affiché est ramené à une année normale.</p>' : '') +
       ecarts.map(function (e) {
         const k = r.calage.coefs[e];
         return '<p class="alerte attention">' + esc(nomEnergie(e)) + ' : k = ' + nb(k, 2) + '. ' + (k < 1 ?
@@ -356,6 +374,13 @@
       r.calage.sansModele.map(function (e) {
         return '<p class="alerte attention">Facture de ' + esc(nomEnergie(e)) + ', mais le calcul n’utilise pas cette énergie : vérifie le chauffage et l’eau chaude.</p>';
       }).join('');
+    const zoneCas = $('#f-cas');
+    if (zoneCas.contains(document.activeElement)) return;
+    zoneCas.innerHTML = r.calage.actif ?
+      '<div class="garder-cas">' + ico('cible') + '<div><b>Tu connais la vraie consommation de ce bâtiment</b>' +
+      '<span>Garde-le comme cas de référence : l’onglet Validation mesure si le moteur tombe juste.</span>' +
+      '<div class="ligne-cas"><input type="text" data-nom-cas maxlength="60" placeholder="Nom, sans nom de client (ex. Maison 1970 T4)" aria-label="Nom du cas">' +
+      '<button type="button" class="bouton" data-action="garder-cas">' + ico('check') + 'Garder ce cas</button></div></div></div>' : '';
   }
 
   /* ---------- Résultats ---------- */
@@ -645,6 +670,48 @@
   }
 
   /* ---------- Onglet Données ---------- */
+
+  // Les valeurs d'exemple qui pèsent le plus (calcul dans moteur/calcul.js, gardé tant que rien ne change).
+  let cachePriorites = { cle: null };
+  function priorites() {
+    const avecBatiment = !!(r && !r.erreur && !r.manque.length);
+    const cle = JSON.stringify([avecBatiment ? entrees() : 'types', etat.factures, etat.djuFactures, modifs, validees]);
+    if (cachePriorites.cle !== cle) {
+      cachePriorites = {
+        cle: cle, avecBatiment: avecBatiment,
+        liste: avecBatiment ? M.influences(entrees(), etat.factures, H, modifs, options()) : M.influencesSurCas(H.BATIMENTS_TYPES, H, modifs, options())
+      };
+    }
+    return cachePriorites;
+  }
+
+  function effetsTexte(x) {
+    const effets = [];
+    if (x.facture >= 0.05) effets.push('facture ± ' + nb(x.facture * 10, 1) + ' %');
+    if (x.conso >= 0.05) effets.push('consommation ± ' + nb(x.conso * 10, 1) + ' %');
+    if (x.retour >= 0.05) effets.push('temps de retour ± ' + nb(Math.min(x.retour, 9.9) * 10) + ' %');
+    if (x.verdicts) effets.push('<b>' + x.verdicts + ' verdict' + (x.verdicts > 1 ? 's changent' : ' change') + '</b>');
+    return effets.length ? effets.join(' · ') : 'effet faible';
+  }
+
+  function afficherPriorites() {
+    const zone = $('#priorites');
+    if (!zone) return;
+    const p = priorites();
+    const nbValidees = Object.keys(validees).length;
+    zone.innerHTML = '<div class="section-tete"><h2>' + ico('cible') + 'À vérifier en priorité</h2><span class="badge info">' +
+      (p.avecBatiment ? 'pour ton bâtiment' : 'sur 3 bâtiments types') + '</span></div>' +
+      '<p class="aide">Les valeurs d’exemple qui font le plus bouger le résultat si elles sont fausses de 10 %. Vérifie-les dans tes sources, puis corrige le chiffre ou ' +
+      'clique « Je valide » : elles ne compteront plus comme « exemple ».' + (nbValidees ? ' Déjà validées par toi : <b>' + nbValidees + '</b>.' : '') + '</p>' +
+      (p.liste.length ? '<ol class="liste-priorites">' + p.liste.slice(0, 12).map(function (x) {
+        return '<li><div class="prio-texte"><b>' + esc(x.entree.libelle) + '</b><span class="prio-groupe">' + esc(x.entree.groupe) +
+          (x.cas ? ' · ' + esc(x.cas) : '') + '</span><span class="prio-effets">Si elle est fausse de 10 % : ' + effetsTexte(x) + '</span>' +
+          '<small>' + esc(x.entree.source) + '</small></div><div class="prio-valeur"><input type="text" inputmode="decimal" data-donnee="' + esc(x.id) +
+          '" value="' + esc(String(x.valeur).replace('.', ',')) + '" aria-label="' + esc(x.entree.libelle) + '"><span>' + esc(x.entree.unite) + '</span>' +
+          '<button type="button" class="bouton" data-valider="' + esc(x.id) + '">' + ico('check') + 'Je valide</button></div></li>';
+      }).join('') + '</ol>' : '<p class="vide">Plus aucune valeur d’exemple ici : tout est validé ou modifié par toi. 👏</p>');
+  }
+
   function afficherDonnees() {
     const filtre = ($('#filtre-donnees').value || '').toLowerCase();
     const groupes = {};
@@ -654,18 +721,23 @@
     });
     const ligne = function (x) {
       const modifiee = typeof modifs[x.id] === 'number';
+      const validee = !!validees[x.id];
       const valeur = modifiee ? modifs[x.id] : x.valeur;
-      return '<tr' + (modifiee ? ' class="modifiee"' : '') + '><td data-label="Valeur">' + esc(x.libelle) + '</td>' +
+      const statut = modifiee ? '<span class="badge info">modifiée</span>' :
+        x.statut === 'valide' ? '<span class="badge valide">validée</span>' :
+        validee ? '<span class="badge valide" title="Validée par toi le ' + esc(validees[x.id]) + '">validée par toi</span> <button type="button" class="mini-lien" data-devalider="' + esc(x.id) + '">annuler</button>' :
+        '<span class="badge exemple">exemple</span> <button type="button" class="mini-lien" data-valider="' + esc(x.id) + '">je valide</button>';
+      return '<tr' + (modifiee ? ' class="modifiee"' : validee ? ' class="validee"' : '') + '><td data-label="Valeur">' + esc(x.libelle) + '</td>' +
         '<td class="num" data-label="Chiffre"><input type="text" inputmode="decimal" data-donnee="' + esc(x.id) + '" value="' + esc(String(valeur).replace('.', ',')) +
         '" aria-label="' + esc(x.libelle) + '"></td><td data-label="Unité">' + esc(x.unite) + '</td>' +
-        '<td data-label="Statut"><span class="badge ' + (modifiee ? 'info' : x.statut === 'valide' ? 'valide' : 'exemple') + '">' +
-        (modifiee ? 'modifiée' : x.statut === 'valide' ? 'validée' : 'exemple') + '</span></td>' +
+        '<td data-label="Statut" class="statut">' + statut + '</td>' +
         '<td class="source" data-label="Source">' + esc(x.source) + (modifiee ? ' <small>(origine : ' + esc(String(x.valeur).replace('.', ',')) + ')</small>' : '') + '</td></tr>';
     };
     const carte = Object.keys(V).map(function (k) { return V[k]; }).filter(function (x) {
       return !filtre || (x.libelle + ' carte').toLowerCase().indexOf(filtre) >= 0;
     });
-    $('#donnees').innerHTML = Object.keys(groupes).map(function (g) {
+    $('#donnees').innerHTML = (filtre ? '' : '<section class="bloc priorites" id="priorites"><p class="vide">' + ico('sablier') + ' Je classe les valeurs qui pèsent le plus…</p></section>') +
+      Object.keys(groupes).map(function (g) {
       return '<section class="bloc groupe-donnees"><h2>' + esc(g) + '</h2><div class="defilement"><table class="table-donnees"><thead><tr><th>Valeur</th>' +
         '<th class="num">Chiffre</th><th>Unité</th><th>Statut</th><th>Source</th></tr></thead><tbody>' + groupes[g].map(ligne).join('') + '</tbody></table></div></section>';
     }).join('') +
@@ -677,16 +749,142 @@
         }).join('') + '</tbody></table></div></section>' : '') +
       '<details class="bloc groupe-donnees"><summary><b>Zones climatiques par département</b></summary><p class="aide">' + esc(H.ZONES_SOURCE) + '</p><ul class="zones">' +
       Object.keys(H.ZONES).map(function (z) { return '<li><b>' + z + '</b> : ' + H.ZONES[z].join(', ') + '</li>'; }).join('') + '</ul></details>';
+    // Le classement prend une fraction de seconde : on laisse d'abord la page s'afficher.
+    if (!filtre) setTimeout(afficherPriorites, 30);
+  }
+
+  function valider(id, oui) {
+    if (oui) validees[id] = aujourdhui(); else delete validees[id];
+    F.ecrire('validees.v1', validees);
+    recalculer();
+    afficherDonnees();
+  }
+
+  /* ---------- Onglet Validation : tes cas de référence ---------- */
+  function garderCas() {
+    if (!r || r.erreur || r.manque.length || !r.calage.actif) { F.toast('Il faut un bâtiment et ses factures.'); return; }
+    const champ = $('[data-nom-cas]');
+    const nom = (champ && champ.value.trim()) || ('Cas ' + (cas.length + 1));
+    cas.push({ id: Date.now().toString(36), nom: nom, date: aujourdhui(), entrees: copie(entrees()),
+      factures: copie(etat.factures), djuFactures: etat.djuFactures || null });
+    F.ecrire('cas.v1', cas);
+    if (champ) champ.value = '';
+    F.toast('Cas « ' + nom + ' » gardé : voir l’onglet Validation.');
+  }
+
+  function lectureValidation(st) {
+    if (st.n < 3) return '<p class="alerte info">Ajoute au moins 3 cas (idéalement des usages et des époques différents) pour voir une vraie tendance.</p>';
+    const textes = [];
+    if (Math.abs(st.biais) <= 0.1) textes.push('<p class="alerte ok">' + ico('check') + ' Pas de biais net : en moyenne, le moteur tombe à ± 10 % des factures.</p>');
+    else if (st.biais > 0) textes.push('<p class="alerte attention">Le moteur <b>surestime</b> de ' + pct(st.biais) + ' en moyenne. Pistes (H) : les U « si inconnu » de l’époque, ' +
+      'l’intermittence, le rendement des chaudières anciennes, les DJU de la zone. Regarde « À vérifier en priorité » dans l’onglet Données.</p>');
+    else textes.push('<p class="alerte attention">Le moteur <b>sous-estime</b> de ' + pct(-st.biais) + ' en moyenne. Pistes (H) : les autres usages (bureautique, process), ' +
+      'la consigne, la surface chauffée, l’eau chaude.</p>');
+    if (st.partDedans < 0.6) textes.push('<p class="alerte attention">Seulement ' + pct(st.partDedans) + ' des factures tombent dans la fourchette : elle est trop étroite. ' +
+      'Augmente les incertitudes (groupe « Fiabilité » de l’onglet Données).</p>');
+    return textes.join('');
+  }
+
+  function afficherValidation() {
+    const evals = cas.map(function (c) { return M.evaluerCas(c, H, modifs, options()); });
+    const st = M.statistiquesCas(evals);
+    const seuil = M.creerDonnees(H, modifs).v('fiab.bonne');
+    let html = '';
+    if (st.n) {
+      html += '<div class="kpis kpis-4">' +
+        tuileKpi('check', 'Cas comparés', nb(st.n), cas.length > st.n ? (cas.length - st.n) + ' incomplet(s)' : '', '') +
+        tuileKpi('calque', 'Biais moyen', (st.biais >= 0 ? '+ ' : '− ') + pct(Math.abs(st.biais)), st.biais >= 0 ? 'le moteur surestime' : 'le moteur sous-estime', 'moyenne de (calcul − factures) / factures') +
+        tuileKpi('cible', 'Écart moyen', pct(st.ecartMoyen), 'en valeur absolue', '') +
+        tuileKpi('feuille', 'Dans la fourchette', pct(st.partDedans), 'des factures', 'une bonne fourchette en contient la plupart') + '</div>' +
+        lectureValidation(st) +
+        '<section class="bloc"><h2>Calcul ou factures</h2><p class="aide">Chaque point est un bâtiment : sur la diagonale, le moteur tombe juste ; au-dessus, il surestime. ' +
+        'La bande grise = ± ' + pct(seuil) + '.</p>' +
+        G.nuage(evals.map(function (e, i) {
+          return e.manque.length ? null : { x: e.factures, y: e.calcul, nom: cas[i].nom, famille: e.famille, dedans: e.dedans };
+        }).filter(Boolean), seuil, energie) + '</section>';
+    }
+    html += '<section class="bloc"><div class="section-tete"><h2>' + ico('facture') + 'Tes cas de référence</h2><div class="barre-boutons">' +
+      '<button type="button" class="bouton" data-action="exporter-cas">' + ico('telecharger') + 'Exporter</button>' +
+      '<label class="bouton">' + ico('copie') + 'Importer<input type="file" accept="application/json,.json" data-importer-cas hidden></label></div></div>' +
+      (cas.length ? '<div class="defilement"><table class="table-cas"><thead><tr><th>Cas</th><th>Bâtiment</th><th class="num">Calcul</th><th class="num">Factures</th>' +
+        '<th class="num">Écart</th><th>Fourchette</th><th></th></tr></thead><tbody>' + cas.map(function (c, i) {
+          const e = evals[i];
+          if (e.manque.length) {
+            return '<tr><td data-label="Cas"><b>' + esc(c.nom) + '</b></td><td colspan="5">incomplet (' + esc(e.manque.join(', ')) + ')</td>' +
+              '<td><button type="button" class="mini-lien" data-supprimer-cas="' + esc(c.id) + '">supprimer</button></td></tr>';
+          }
+          return '<tr><td data-label="Cas"><b>' + esc(c.nom) + '</b><small>' + esc(c.date) + (c.djuFactures ? ' · ' + nb(c.djuFactures) + ' DJU' : '') + '</small></td>' +
+            '<td data-label="Bâtiment">' + esc(nomUsageBat(e.usage)) + ' · ' + esc(nomPeriode(e.periode)) + ' · ' + esc(e.zone) + '</td>' +
+            '<td class="num" data-label="Calcul">' + energie(e.calcul) + '</td><td class="num" data-label="Factures">' + energie(e.factures) + '</td>' +
+            '<td class="num ' + (Math.abs(e.ecart) <= seuil ? 'ecart-ok' : 'ecart-fort') + '" data-label="Écart">' + (e.ecart >= 0 ? '+ ' : '− ') + pct(Math.abs(e.ecart)) + '</td>' +
+            '<td data-label="Fourchette">' + (e.dedans ? '✅ dedans' : '❌ dehors') + ' <small>(± ' + pct(e.rel) + ')</small>' +
+            (e.manquantes.length ? '<small>énergie non calculée : ' + esc(e.manquantes.map(nomEnergie).join(', ')) + '</small>' : '') + '</td>' +
+            '<td class="actions-cas"><button type="button" class="mini-lien" data-ouvrir-cas="' + esc(c.id) + '">ouvrir</button> ' +
+            '<button type="button" class="mini-lien" data-supprimer-cas="' + esc(c.id) + '">supprimer</button></td></tr>';
+        }).join('') + '</tbody></table></div>' :
+        '<p class="vide">Aucun cas pour l’instant. Choisis un bâtiment dont tu connais les factures, saisis-les dans l’onglet Factures, puis « Garder ce cas ».</p>') +
+      '<p class="aide">Tes cas restent dans ton navigateur (clé flash.cas.v1). L’export est un fichier sur ton ordinateur : n’y mets pas de nom de client.</p></section>';
+    $('#validation').innerHTML = html;
+  }
+
+  function ouvrirCas(id) {
+    const c = cas.find(function (x) { return x.id === id; });
+    if (!c) return;
+    etat = etatVide();
+    Object.keys(c.entrees).forEach(function (k) {
+      const e = c.entrees[k];
+      (e.origine === 'saisie' ? etat.saisies : etat.carte)[k] = e;
+    });
+    etat.factures = copie(c.factures);
+    etat.djuFactures = c.djuFactures || null;
+    etat.batiment = { adresse: { label: 'Cas de référence : ' + c.nom } };
+    window.CarteFlash.effacer();
+    $('#recherche').value = '';
+    recalculer();
+    ouvrirVue('diagnostic');
+  }
+
+  function supprimerCas(id) {
+    const c = cas.find(function (x) { return x.id === id; });
+    if (!c || !window.confirm('Supprimer le cas « ' + c.nom + ' » ?')) return;
+    cas = cas.filter(function (x) { return x.id !== id; });
+    F.ecrire('cas.v1', cas);
+    afficherValidation();
+  }
+
+  function exporterCas() {
+    if (!cas.length) { F.toast('Aucun cas à exporter.'); return; }
+    F.telecharger('cas-audit-flash_' + aujourdhui() + '.json',
+      JSON.stringify({ format: 'audit-flash-cas', version: 1, exporte_le: aujourdhui(), cas: cas }, null, 2), 'application/json');
+  }
+
+  function importerCas(fichier) {
+    const lecteur = new FileReader();
+    lecteur.onload = function () {
+      try {
+        const contenu = JSON.parse(lecteur.result);
+        if (!contenu || contenu.format !== 'audit-flash-cas' || !Array.isArray(contenu.cas)) throw new Error('format');
+        let ajoutes = 0;
+        contenu.cas.forEach(function (c) {
+          if (!c || !c.id || !c.entrees || !c.factures) return;
+          cas = cas.filter(function (x) { return x.id !== c.id; });
+          cas.push(c);
+          ajoutes++;
+        });
+        F.ecrire('cas.v1', cas);
+        afficherValidation();
+        F.toast(ajoutes + ' cas importé(s).');
+      } catch (e) {
+        F.toast('Fichier illisible : il faut un export « cas de référence » de l’Audit flash.');
+      }
+    };
+    lecteur.readAsText(fichier);
   }
 
   /* ---------- Exemple, nouveau ---------- */
   function chargerExemple() {
-    const s = function (v) { return { valeur: v, origine: 'saisie' }; };
     etat = etatVide();
-    etat.saisies = {
-      usage: s('logement-individuel'), annee: s(1970), chauffage: s('gaz-ancienne'),
-      surfaceSol: s(100), niveaux: s(1), perimetre: s(40), perimetreExpose: s(40), hauteur: s(3), departement: s('31'), codePostal: s('31000')
-    };
+    etat.saisies = Object.assign(copie(H.BATIMENTS_TYPES[0].entrees), { codePostal: { valeur: '31000', origine: 'saisie' } });
     etat.batiment = { adresse: { label: 'Exemple : maison de plain-pied de 1970, Toulouse (sans carte)', commune: 'Exemple Toulouse', codePostal: '31000' } };
     window.CarteFlash.effacer();
     $('#recherche').value = '';
@@ -775,7 +973,9 @@
     $('#vue-diagnostic').hidden = vue !== 'diagnostic';
     $('#vue-methode').hidden = vue !== 'methode';
     $('#vue-donnees').hidden = vue !== 'donnees';
+    $('#vue-validation').hidden = vue !== 'validation';
     if (vue === 'donnees') afficherDonnees();
+    if (vue === 'validation') afficherValidation();
     window.scrollTo(0, 0);
   }
 
@@ -817,6 +1017,13 @@
         const n = F.lireNombre(champ.value);
         if (n > 0) etat.factures[champ.dataset.facture] = n; else delete etat.factures[champ.dataset.facture];
         recalculer();
+      } else if (champ.dataset.dju) {
+        const n = F.lireNombre(champ.value);
+        etat.djuFactures = n > 0 ? n : null;
+        recalculer();
+      } else if (champ.dataset.importerCas !== undefined && champ.files && champ.files[0]) {
+        importerCas(champ.files[0]);
+        champ.value = '';
       } else if (champ.dataset.donnee) {
         const id = champ.dataset.donnee, n = F.lireNombre(champ.value);
         const origine = H.VALEURS.find(function (x) { return x.id === id; }).valeur;
@@ -834,15 +1041,21 @@
     });
     // Boutons des résultats et des factures
     document.addEventListener('click', function (e) {
-      const a = e.target.closest('[data-action], [data-bouquet], [data-vue-lien]');
+      const a = e.target.closest('[data-action], [data-bouquet], [data-vue-lien], [data-valider], [data-devalider], [data-ouvrir-cas], [data-supprimer-cas]');
       if (!a) return;
       if (a.dataset.vueLien) { ouvrirVue(a.dataset.vueLien); return; }
+      if (a.dataset.valider) { valider(a.dataset.valider, true); return; }
+      if (a.dataset.devalider) { valider(a.dataset.devalider, false); return; }
+      if (a.dataset.ouvrirCas) { ouvrirCas(a.dataset.ouvrirCas); return; }
+      if (a.dataset.supprimerCas) { supprimerCas(a.dataset.supprimerCas); return; }
       if (a.dataset.bouquet) { etat.bouquet = a.dataset.bouquet; afficherResultats(); sauver(); return; }
       const action = a.dataset.action;
       if (action === 'exemple') chargerExemple();
       else if (action === 'sans-carte') { ouvrirPanneau('batiment'); $('#b-saisie').open = true; $('[data-saisie="surfacePlancher"]').focus(); }
       else if (action === 'telecharger-fiche') telechargerFiche();
       else if (action === 'copier-fiche') copierFiche();
+      else if (action === 'garder-cas') garderCas();
+      else if (action === 'exporter-cas') exporterCas();
       else if (action === 'toutes-energies') { toutesEnergies = !toutesEnergies; a.textContent = toutesEnergies ? 'Masquer les énergies inutilisées' : 'Afficher toutes les énergies'; majFactures(); }
     });
     $('#filtre-donnees').addEventListener('input', afficherDonnees);

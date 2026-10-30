@@ -60,6 +60,8 @@
 }
 
 * { box-sizing: border-box; }
+/* « hidden » doit toujours masquer, même un bloc en grille ou en flex (onglets, vues). */
+[hidden] { display: none !important; }
 html { -webkit-text-size-adjust: 100%; }
 body {
   margin: 0;
@@ -355,11 +357,11 @@ a.outil:hover { border-color: var(--accent); transform: translateY(-2px); }
 .carte-attente { position: absolute; inset: 0; display: flex; gap: 8px; align-items: center; justify-content: center; color: var(--encre-3); text-align: center; padding: 20px; z-index: 1; }
 .carte-pied { display: flex; gap: 10px; justify-content: space-between; align-items: center; flex-wrap: wrap; padding: 8px 12px; font-size: .8rem; border-top: 1px solid var(--bord); }
 .sources { display: flex; gap: 6px; flex-wrap: wrap; }
-.source { display: inline-flex; align-items: center; gap: 5px; font-size: .74rem; font-weight: 650; padding: 2px 8px; border-radius: 999px; background: var(--surface-2); border: 1px solid var(--bord); color: var(--encre-2); }
-.source i { width: 7px; height: 7px; border-radius: 50%; background: var(--encre-3); }
-.s-ok i { background: var(--ok); }
-.s-ko i { background: var(--danger); }
-.s-attente i { background: var(--alerte); animation: clignote 1s infinite; }
+.sources .source { display: inline-flex; align-items: center; gap: 5px; font-size: .74rem; font-weight: 650; padding: 2px 8px; border-radius: 999px; background: var(--surface-2); border: 1px solid var(--bord); color: var(--encre-2); }
+.sources .source i { width: 7px; height: 7px; border-radius: 50%; background: var(--encre-3); }
+.sources .s-ok i { background: var(--ok); }
+.sources .s-ko i { background: var(--danger); }
+.sources .s-attente i { background: var(--alerte); animation: clignote 1s infinite; }
 @keyframes clignote { 50% { opacity: .25; } }
 .legende-mitoyen { color: var(--alerte); font-weight: 650; }
 .maplibregl-ctrl-attrib { font-size: 11px; }
@@ -471,8 +473,10 @@ a.outil:hover { border-color: var(--accent); transform: translateY(-2px); }
 .jauge-fiab.f-moyenne i.plein { background: var(--alerte); }
 .jauge-fiab.f-faible i.plein { background: var(--danger); }
 .kpis { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin-bottom: 14px; }
+.kpis.kpis-4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+@media (max-width: 1000px) { .kpis.kpis-4 { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (max-width: 860px) { .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
-@media (max-width: 440px) { .kpis { grid-template-columns: minmax(0, 1fr); } }
+@media (max-width: 440px) { .kpis, .kpis.kpis-4 { grid-template-columns: minmax(0, 1fr); } }
 .kpi { display: flex; gap: 12px; padding: 14px; border-radius: var(--rayon-bloc); background: var(--surface); border: 1px solid var(--bord); box-shadow: var(--ombre); min-width: 0; }
 .kpi > div { min-width: 0; }
 .kpi-ico { width: 40px; height: 40px; border-radius: 12px; display: grid; place-items: center; background: var(--accent-doux); color: var(--accent); flex: none; }
@@ -668,3 +672,65 @@ a.outil:hover { border-color: var(--accent); transform: translateY(-2px); }
   .table-donnees td.source { grid-column: 1 / -1; }
   .table-donnees td.num { text-align: left; }
 }
+
+/* ---------- Données : à vérifier en priorité ---------- */
+.priorites { margin-bottom: 14px; border-color: color-mix(in srgb, var(--accent) 35%, var(--bord)); }
+.priorites .vide { display: flex; gap: 8px; align-items: center; justify-content: center; color: var(--encre-3); padding: 18px; }
+.liste-priorites { list-style: none; counter-reset: p; margin: 10px 0 0; padding: 0; display: grid; gap: 8px; }
+.liste-priorites li { counter-increment: p; display: grid; grid-template-columns: 28px minmax(0, 1fr) auto; gap: 4px 12px; align-items: center; padding: 10px 12px; border: 1px solid var(--bord); border-radius: 12px; }
+.liste-priorites li::before { content: counter(p); width: 26px; height: 26px; border-radius: 50%; background: var(--accent-doux); color: var(--accent); display: grid; place-items: center; font-weight: 800; font-size: .8rem; }
+.prio-texte { display: flex; flex-direction: column; min-width: 0; }
+.prio-groupe { font-size: .72rem; color: var(--encre-3); text-transform: uppercase; letter-spacing: .04em; font-weight: 650; }
+.prio-effets { font-size: .82rem; color: var(--encre-2); }
+.prio-texte small { font-size: .7rem; color: var(--encre-3); }
+.prio-valeur { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; justify-content: flex-end; }
+.prio-valeur input { width: 90px; text-align: right; padding: 5px 7px; }
+.prio-valeur span { font-size: .8rem; color: var(--encre-2); }
+.prio-valeur .bouton { padding: 6px 10px; font-size: .8rem; }
+@media (max-width: 700px) {
+  .liste-priorites li { grid-template-columns: 28px minmax(0, 1fr); }
+  .prio-valeur { grid-column: 2; justify-content: flex-start; }
+}
+.mini-lien { font: inherit; font-size: .72rem; background: none; border: 0; color: var(--froid); text-decoration: underline; cursor: pointer; padding: 0 2px; }
+.table-donnees td.statut { white-space: nowrap; }
+.table-donnees tr.validee td { background: var(--ok-doux); }
+
+/* ---------- Factures : correction climatique, cas de référence ---------- */
+.facture-dju { margin-top: 6px; }
+.garder-cas { display: flex; gap: 10px; align-items: flex-start; margin-top: 10px; padding: 12px; border-radius: 12px; background: var(--froid-doux); color: var(--encre); }
+.garder-cas > .ico { color: var(--froid); margin-top: 2px; }
+.garder-cas span { display: block; font-size: .8rem; color: var(--encre-2); margin-bottom: 8px; }
+.ligne-cas { display: flex; gap: 6px; flex-wrap: wrap; }
+.ligne-cas input { flex: 1 1 180px; }
+
+/* ---------- Validation ---------- */
+.table-cas td small { display: block; font-size: .72rem; color: var(--encre-3); }
+.table-cas .ecart-ok { color: var(--ok); font-weight: 700; }
+.table-cas .ecart-fort { color: var(--danger); font-weight: 700; }
+.actions-cas { white-space: nowrap; }
+@media (max-width: 760px) {
+  .table-cas thead { display: none; }
+  .table-cas, .table-cas tbody { display: block; width: 100%; }
+  .table-cas tr { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 10px; padding: 10px 0; border-bottom: 1px solid var(--bord); }
+  .table-cas td { border: 0; padding: 0; }
+  .table-cas td:first-child, .table-cas td[data-label="Bâtiment"] { grid-column: 1 / -1; }
+  .table-cas td.num { text-align: left; }
+  .table-cas td[data-label]::before { content: attr(data-label) " : "; color: var(--encre-3); font-size: .78rem; }
+  .table-cas td:first-child::before { content: none; }
+}
+.graphe-nuage svg { width: 100%; max-width: 640px; display: block; margin: 0 auto; }
+.nuage-bande { fill: var(--surface-2); stroke: var(--bord); }
+.nuage-grille { stroke: var(--bord); stroke-width: 1; }
+.nuage-diagonale { stroke: var(--encre-3); stroke-width: 1.5; stroke-dasharray: 5 4; }
+.nuage-texte { font-size: 11px; fill: var(--encre-3); }
+.nuage-axe { font-size: 12px; fill: var(--encre-2); font-weight: 650; }
+.nuage-point { stroke: var(--surface); stroke-width: 2; }
+.nuage-point.f-logement { fill: var(--froid); }
+.nuage-point.f-tertiaire { fill: var(--accent); }
+.nuage-point.dehors { stroke: var(--danger); stroke-width: 2.5; }
+.nuage-legende { display: flex; gap: 14px; flex-wrap: wrap; justify-content: center; font-size: .8rem; color: var(--encre-2); margin-top: 6px; }
+.nuage-legende i { display: inline-block; width: 11px; height: 11px; border-radius: 50%; margin-right: 5px; vertical-align: -1px; }
+.nuage-legende i.f-logement { background: var(--froid); }
+.nuage-legende i.f-tertiaire { background: var(--accent); }
+.nuage-legende i.dehors { background: none; border: 2.5px solid var(--danger); }
+@media (max-width: 520px) { .vues button { padding: 6px 6px; font-size: .82rem; } }

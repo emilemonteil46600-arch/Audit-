@@ -48,6 +48,21 @@
       Les gains ne s'additionnent pas : un bouquet est calculé dans l'ordre, chaque action
       partant du bâtiment déjà amélioré (et la PAC est dimensionnée APRÈS l'isolation).
 
+  10. Correction climatique des factures : si l'année des factures a eu DJU(année) au lieu de DJU(normale),
+      on calcule le bâtiment avec DJU(année) pour obtenir k, puis on applique k à l'année normale.
+        k = facture / calcul(DJU de l'année)
+      Une année froide n'est donc plus prise pour un bâtiment qui consomme trop.
+
+  11. Les valeurs qui pèsent le plus : chaque valeur d'exemple est poussée de + 10 % ; on mesure
+        élasticité = | résultat(valeur × 1,1) / résultat(valeur) − 1 | / 0,1
+      sur la consommation, sur la facture et sur les temps de retour des actions ✅ / 🟠, et on compte
+      les verdicts qui changent.
+      Poids = la plus forte des trois élasticités + 1 par verdict qui change. On valide d'abord les plus lourdes.
+
+  12. Cas de référence (valider le moteur) : pour un bâtiment dont on connaît les factures,
+        écart = (calcul sans calage − factures) / factures      (> 0 : le moteur surestime)
+      biais = moyenne des écarts ; « dans la fourchette » si | calcul − factures | ≤ δ.
+
    Exemple refait à la main : maison de plain-pied de 1970 à Toulouse (zone H2c, DJU 1 950),
    10 m × 10 m au sol, 3 m de haut, chaudière gaz ancienne ; tout le reste « je ne sais pas ».
      S chauffée = 100 × 0,80 = 80 m² ; V = 80 × 2,5 = 200 m³
@@ -61,14 +76,17 @@
      EP (5 usages) = (32 146 + 400 × 1,9) / 80 ≈ 411 kWhEP/m² → F ; CO₂ ≈ 92 kg/m² → F
      Puissance = 508,6 × (19 − (−5)) / 1000 ≈ 12,2 kW
      Isolation des combles (U 1,0 → 0,14) : ΔH = 86 W/K → − 5 031 kWh de gaz → ≈ 614 €/an
+     Poids du prix du gaz sur la facture : + 10 % → + 392 € sur 4 541 € → élasticité 3 925 / 4 541 ≈ 0,86
+     Factures d'une année à 2 340 DJU (+ 20 %) : k gaz = facture / ((29 753 × 1,2 + 2 393) × 1,11)
    ========================================================== */
 (function (global) {
   'use strict';
 
   /* ---------- 0. Les données (avec tes modifications) ---------- */
 
-  // H = HYPOTHESES_FLASH ; modifs = { id: valeur } que tu as changées dans l'onglet Données.
-  function creerDonnees(H, modifs) {
+  // H = HYPOTHESES_FLASH ; modifs = { id: valeur } que tu as changées dans l'onglet Données ;
+  // validees = { id: date } : les valeurs d'exemple que tu as vérifiées et gardées telles quelles.
+  function creerDonnees(H, modifs, validees) {
     const index = {};
     H.VALEURS.forEach(function (x) { index[x.id] = x; });
     const perso = modifs || {};
@@ -79,17 +97,17 @@
       utilisees.add(id);
       return estModifiee(perso, id) ? perso[id] : e.valeur;
     }
-    return { H: H, index: index, modifs: perso, utilisees: utilisees, v: v };
+    return { H: H, index: index, modifs: perso, validees: validees || {}, utilisees: utilisees, v: v };
   }
 
   function estModifiee(modifs, id) {
     return typeof modifs[id] === 'number' && isFinite(modifs[id]);
   }
 
-  // Les valeurs d'exemple réellement utilisées par le calcul (et que tu n'as pas remplacées).
+  // Les valeurs d'exemple réellement utilisées par le calcul (ni remplacées, ni validées par toi).
   function valeursExemple(D) {
     return Array.from(D.utilisees).filter(function (id) {
-      return D.index[id].statut !== 'valide' && !estModifiee(D.modifs, id);
+      return D.index[id].statut !== 'valide' && !estModifiee(D.modifs, id) && !D.validees[id];
     }).map(function (id) { return D.index[id]; });
   }
 
@@ -803,16 +821,21 @@
 
   /* ---------- 8. Tout le pré-diagnostic ---------- */
 
-  // entrees : réponses + carte ; factures : { energie: kWh } ; modifs : tes valeurs de l'onglet Données.
-  function diagnostiquer(entrees, factures, H, modifs) {
-    const D = creerDonnees(H, modifs);
+  // entrees : réponses + carte ; factures : { energie: kWh } ; modifs : tes valeurs de l'onglet Données ;
+  // options : { validees: { id: date }, djuFactures: DJU de l'année des factures (facultatif) }.
+  function diagnostiquer(entrees, factures, H, modifs, options) {
+    const o = options || {};
+    const D = creerDonnees(H, modifs, o.validees);
     const c = completer(entrees, D);
     if (c.manque.length) return { manque: c.manque, origines: c.origines };
     const p = c.params;
     const modele = calculer(p, D);
     const inc = incertitude(p, c.origines, D);
 
-    const coefs = coefficientsCalage(modele, factures);
+    // Calage : on compare les factures au bâtiment calculé avec le climat de LEUR année (point 10).
+    const djuFactures = Number(o.djuFactures) > 0 ? Number(o.djuFactures) : null;
+    const modeleFactures = djuFactures ? calculer(Object.assign({}, p, { dju: djuFactures }), D) : modele;
+    const coefs = coefficientsCalage(modeleFactures, factures);
     const cale = Object.keys(coefs).length > 0;
     const kUsages = cale ? calageParUsage(modele, coefs) : null;
     const resultat = appliquerCalage(modele, kUsages, p.famille, D);
@@ -850,9 +873,91 @@
       modele: modele, resultat: resultat,
       incertitude: inc, delta: delta, rel: rel, deltaCout: resultat.total.cout * rel,
       fiabilite: niveauFiabilite(rel, D),
-      calage: { actif: cale, coefs: coefs, sansModele: facturesSansModele(modele, factures) },
+      calage: { actif: cale, coefs: coefs, sansModele: facturesSansModele(modele, factures), djuFactures: djuFactures, djuNormal: p.dju,
+        ecartClimat: djuFactures ? djuFactures / p.dju - 1 : 0, modeleFactures: modeleFactures },
       actions: evaluations, choix: choix, bouquets: bouquets,
       exemples: valeursExemple(D)
+    };
+  }
+
+  /* ---------- 9. Les valeurs qui pèsent le plus (point 11 en haut du fichier) ---------- */
+
+  function elasticite(apres, avant, pas) {
+    return avant ? Math.abs(apres / avant - 1) / pas : 0;
+  }
+
+  function influences(entrees, factures, H, modifs, options, pas) {
+    const ecart = pas || 0.1;
+    const base = diagnostiquer(entrees, factures, H, modifs, options);
+    if (base.manque.length) return [];
+    return base.exemples.map(function (x) {
+      const v = modifs && estModifiee(modifs, x.id) ? modifs[x.id] : x.valeur;
+      if (!v) return null; // une valeur nulle ne se pousse pas de 10 %
+      const m = Object.assign({}, modifs);
+      m[x.id] = v * (1 + ecart);
+      const r = diagnostiquer(entrees, factures, H, m, options);
+      // Temps de retour : seulement les actions ✅ ou 🟠 (celles qui comptent pour décider).
+      let retour = 0, verdicts = 0;
+      base.actions.forEach(function (a) {
+        if (a.etat.etat !== 'ok') return;
+        const b = r.actions.find(function (y) { return y.id === a.id; });
+        if (!b || b.etat.etat !== 'ok' || b.verdict !== a.verdict) verdicts++;
+        if (b && a.tra && b.tra && a.verdict !== 'non') retour = Math.max(retour, elasticite(b.tra, a.tra, ecart));
+      });
+      const conso = elasticite(r.resultat.total.ef, base.resultat.total.ef, ecart);
+      const facture = elasticite(r.resultat.total.cout, base.resultat.total.cout, ecart);
+      return { id: x.id, entree: x, valeur: v, conso: conso, facture: facture, retour: retour, verdicts: verdicts,
+        poids: Math.max(conso, facture, retour) + verdicts };
+    }).filter(Boolean).sort(function (a, b) { return b.poids - a.poids; });
+  }
+
+  // Le même classement sur plusieurs bâtiments types : on garde, pour chaque valeur, son poids le plus fort.
+  function influencesSurCas(liste, H, modifs, options) {
+    const parId = {};
+    liste.forEach(function (cas) {
+      influences(cas.entrees, cas.factures || {}, H, modifs, options).forEach(function (x) {
+        if (!parId[x.id] || x.poids > parId[x.id].poids) parId[x.id] = Object.assign({}, x, { cas: cas.nom });
+      });
+    });
+    return Object.keys(parId).map(function (id) { return parId[id]; }).sort(function (a, b) { return b.poids - a.poids; });
+  }
+
+  /* ---------- 10. Les cas de référence (point 12 en haut du fichier) ----------
+     cas = { entrees, factures, djuFactures } : un bâtiment dont tu connais les factures.
+     On compare le calcul SANS calage aux factures (sinon on se comparerait à soi-même).
+     La fourchette utilisée est celle de la consommation totale (H : appliquée aux énergies facturées). */
+  function evaluerCas(cas, H, modifs, options) {
+    const D = creerDonnees(H, modifs, options && options.validees);
+    const c = completer(cas.entrees, D);
+    if (c.manque.length) return { manque: c.manque };
+    const djuAnnee = Number(cas.djuFactures) > 0 ? Number(cas.djuFactures) : null;
+    const modele = calculer(djuAnnee ? Object.assign({}, c.params, { dju: djuAnnee }) : c.params, D);
+    const inc = incertitude(c.params, c.origines, D);
+    let calcul = 0, factures = 0;
+    const manquantes = [];
+    Object.keys(cas.factures || {}).filter(function (e) { return Number(cas.factures[e]) > 0; }).forEach(function (e) {
+      factures += Number(cas.factures[e]);
+      if (modele.parEnergie[e]) calcul += modele.parEnergie[e].facture;
+      else manquantes.push(e);
+    });
+    if (!(factures > 0)) return { manque: ['factures'] };
+    return {
+      manque: [], usage: c.params.usage, famille: c.params.famille, periode: c.params.periode, zone: c.params.zone,
+      calcul: calcul, factures: factures, ecart: (calcul - factures) / factures, rel: inc.rel,
+      dedans: Math.abs(calcul - factures) <= inc.rel * calcul, manquantes: manquantes
+    };
+  }
+
+  function statistiquesCas(evaluations) {
+    const ok = (evaluations || []).filter(function (e) { return e && !e.manque.length; });
+    const n = ok.length;
+    if (!n) return { n: 0 };
+    const moyenne = function (t) { return t.reduce(function (s, x) { return s + x; }, 0) / n; };
+    return {
+      n: n,
+      biais: moyenne(ok.map(function (e) { return e.ecart; })),
+      ecartMoyen: moyenne(ok.map(function (e) { return Math.abs(e.ecart); })),
+      partDedans: ok.filter(function (e) { return e.dedans; }).length / n
     };
   }
 
@@ -862,7 +967,8 @@
     bilan, etiquetteDpe, calculer, FACTEURS, incertitude, niveauFiabilite,
     coefficientsCalage, facturesSansModele, calageParUsage, appliquerCalage,
     fluxActualise, tempsRetourBrut, tempsRetourActualise, van, tresorerie, verdict,
-    ACTIONS, ORDRE_FAMILLES, chiffrer, evaluerAction, choisirParFamille, evaluerBouquet, diagnostiquer
+    ACTIONS, ORDRE_FAMILLES, chiffrer, evaluerAction, choisirParFamille, evaluerBouquet, diagnostiquer,
+    elasticite, influences, influencesSurCas, evaluerCas, statistiquesCas
   };
 
   global.MoteurCalcul = MoteurCalcul;

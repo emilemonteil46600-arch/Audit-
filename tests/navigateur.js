@@ -157,6 +157,12 @@ const deborde = function (page) {
   await page.press('[data-facture="gaz"]', 'Tab');
   await page.waitForSelector('.res-tete .badge.valide', { timeout: 5000 });
   ok(true, 'calage sur factures actif');
+  await page.fill('[data-dju]', '2300');
+  await page.press('[data-dju]', 'Tab');
+  ok(/année à 2\s300 DJU/.test(await page.textContent('#f-bilan')), 'correction climatique des factures (2 300 DJU)');
+  await page.fill('[data-nom-cas]', 'Immeuble test');
+  await page.click('[data-action="garder-cas"]');
+  ok(/gardé/.test(await page.textContent('.toast')), 'bâtiment gardé comme cas de référence');
   const bouquet = await page.$('[data-bouquet="complet"]');
   if (bouquet) { await bouquet.click(); ok(await page.isVisible('.graphe-cascade'), 'cascade du bouquet affichée'); }
   const [telechargement] = await Promise.all([page.waitForEvent('download'), page.click('[data-action="telecharger-fiche"]')]);
@@ -165,13 +171,41 @@ const deborde = function (page) {
   await page.screenshot({ path: path.join(SORTIE, 'outil-resultats.png'), fullPage: true });
 
   await page.click('[data-vue="donnees"]');
+  await page.waitForSelector('.liste-priorites li', { timeout: 10000 });
+  const premiere = await page.textContent('.liste-priorites li');
+  ok(/Si elle est fausse de 10 %/.test(premiere), 'valeurs à vérifier en priorité classées pour ce bâtiment');
+  await page.click('.liste-priorites li [data-valider]');
+  await page.waitForFunction(function () { return /Déjà validées par toi : 1/.test(document.querySelector('#priorites').textContent); }, null, { timeout: 10000 });
+  ok(true, 'une valeur validée par toi');
   await page.fill('#filtre-donnees', 'gaz naturel');
   const champ = await page.$('[data-donnee="energie.gaz.prix"]');
   await champ.fill('0,15');
   await champ.press('Tab');
   ok((await page.textContent('#donnees')).includes('modifiée'), 'valeur modifiée dans l’onglet Données');
+  await page.screenshot({ path: path.join(SORTIE, 'outil-donnees.png') });
   await page.click('[data-vue="methode"]');
   ok(await page.isVisible('#vue-methode .etapes-methode'), 'onglet Méthode');
+  ok(await page.isHidden('#vue-diagnostic') && await page.isHidden('#vue-donnees'), 'les autres vues sont bien masquées');
+
+  // Un deuxième cas (l'exemple + ses factures), puis l'onglet Validation
+  await page.click('[data-vue="diagnostic"]');
+  await page.click('#exemple');
+  await page.click('[data-panneau="factures"]');
+  await page.fill('[data-facture="gaz"]', '30000');
+  await page.press('[data-facture="gaz"]', 'Tab');
+  await page.fill('[data-nom-cas]', 'Maison exemple');
+  await page.click('[data-action="garder-cas"]');
+  await page.click('[data-vue="validation"]');
+  const validation = await page.textContent('#validation');
+  ok(/Immeuble test/.test(validation) && /Maison exemple/.test(validation), 'deux cas de référence listés');
+  ok(/Biais moyen/.test(validation) && await page.isVisible('.graphe-nuage svg'), 'statistiques et nuage calcul / factures');
+  const [exportCas] = await Promise.all([page.waitForEvent('download'), page.click('[data-action="exporter-cas"]')]);
+  const contenu = JSON.parse(fs.readFileSync(await exportCas.path(), 'utf8'));
+  ok(contenu.format === 'audit-flash-cas' && contenu.cas.length === 2, 'export des cas de référence (JSON)');
+  ok(await page.isHidden('#vue-diagnostic'), 'Validation : le diagnostic est masqué');
+  await page.screenshot({ path: path.join(SORTIE, 'outil-validation.png'), fullPage: true });
+  await page.click('[data-ouvrir-cas]');
+  ok(!(await page.isHidden('#vue-diagnostic')) && /Cas de référence/.test(await page.textContent('#b-adresse')), 'un cas se rouvre dans le diagnostic');
   await page.close();
 
   console.log('Sans réseau (tout bloqué) :');
@@ -192,7 +226,7 @@ const deborde = function (page) {
       if (p === 'index.html') {
         await pg.click('#exemple');
         await pg.waitForSelector('.kpis');
-        for (const vue of ['donnees', 'methode']) {
+        for (const vue of ['donnees', 'methode', 'validation']) {
           await pg.click('[data-vue="' + vue + '"]');
           ok(!(await deborde(pg)), p + ' › ' + vue + ' (' + theme + ') : pas de défilement horizontal');
         }

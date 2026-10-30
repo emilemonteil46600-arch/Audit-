@@ -178,3 +178,66 @@ test('Tes modifications de l’onglet Données sont prises en compte', function 
   assert.ok(!modifie.exemples.some(function (v) { return v.id === 'energie.gaz.prix'; }));
   assert.ok(base.exemples.some(function (v) { return v.id === 'energie.gaz.prix'; }));
 });
+
+test('Valeurs qui pèsent le plus : prix du gaz ≈ 0,86 sur la facture, DJU ≈ 0,85 sur la consommation', function () {
+  const liste = M.influences(entreesExemple(), {}, H, {});
+  const gaz = liste.find(function (x) { return x.id === 'energie.gaz.prix'; });
+  // + 10 % sur le prix du gaz : + 10 % sur 3 925 € de gaz, sur une facture de 4 541 €
+  assert.ok(proche(gaz.facture, 3925.003 / 4541.003, 0.001));
+  assert.equal(gaz.conso, 0);
+  const dju = liste.find(function (x) { return x.id === 'climat.H2c.dju'; });
+  // + 10 % de DJU : + 10 % sur le chauffage (29 753 kWh) sur 34 946 kWh au total
+  assert.ok(proche(dju.conso, 29753.1 / 34945.809, 0.001));
+  for (let i = 1; i < liste.length; i++) assert.ok(liste[i - 1].poids >= liste[i].poids);
+  assert.ok(liste.slice(0, 10).some(function (x) { return x.id === 'chauffage.gaz-ancienne.rendement'; }));
+});
+
+test('Une valeur validée par toi ne compte plus comme « exemple »', function () {
+  const avant = M.diagnostiquer(entreesExemple(), {}, H, {});
+  const apres = M.diagnostiquer(entreesExemple(), {}, H, {}, { validees: { 'energie.gaz.prix': '2026-10-30' } });
+  assert.equal(apres.exemples.length, avant.exemples.length - 1);
+  assert.ok(!apres.exemples.some(function (v) { return v.id === 'energie.gaz.prix'; }));
+  assert.ok(!M.influences(entreesExemple(), {}, H, {}, { validees: { 'energie.gaz.prix': '2026-10-30' } })
+    .some(function (x) { return x.id === 'energie.gaz.prix'; }));
+});
+
+test('Correction climatique : factures d’une année à + 20 % de DJU → k plus bas', function () {
+  const normal = M.diagnostiquer(entreesExemple(), { gaz: 30000 }, H, {}, { djuFactures: 1950 });
+  const sans = M.diagnostiquer(entreesExemple(), { gaz: 30000 }, H, {});
+  assert.ok(proche(normal.calage.coefs.gaz, sans.calage.coefs.gaz, 1e-12));
+  const froid = M.diagnostiquer(entreesExemple(), { gaz: 30000 }, H, {}, { djuFactures: 2340 });
+  assert.ok(proche(froid.calage.coefs.gaz, 30000 / ((29753.1 * 1.2 + 2392.709) * 1.11), 1e-6));
+  // Le résultat affiché reste l'année normale : la consommation de gaz calée est plus basse
+  assert.ok(froid.resultat.parEnergie.gaz.ef < sans.resultat.parEnergie.gaz.ef);
+  assert.equal(froid.calage.djuFactures, 2340);
+});
+
+test('Cas de référence : écart, fourchette, biais', function () {
+  const exact = M.evaluerCas({ entrees: entreesExemple(), factures: { gaz: 32145.809 * 1.11, electricite: 2800 } }, H, {});
+  assert.ok(proche(exact.ecart, 0, 1e-6));
+  assert.equal(exact.dedans, true);
+  const bas = M.evaluerCas({ entrees: entreesExemple(), factures: { gaz: 20000 } }, H, {});
+  assert.ok(proche(bas.ecart, (32145.809 * 1.11 - 20000) / 20000, 1e-6));
+  assert.equal(bas.dedans, false);
+  const autre = M.evaluerCas({ entrees: entreesExemple(), factures: { fioul: 20000 } }, H, {});
+  assert.deepEqual(autre.manquantes, ['fioul']);
+  assert.deepEqual(M.evaluerCas({ entrees: entreesExemple(), factures: {} }, H, {}).manque, ['factures']);
+  const st = M.statistiquesCas([exact, bas]);
+  assert.equal(st.n, 2);
+  assert.ok(proche(st.biais, bas.ecart / 2, 1e-6));
+  assert.equal(st.partDedans, 0.5);
+  assert.deepEqual(M.statistiquesCas([]), { n: 0 });
+});
+
+test('Bâtiments types : chacun se calcule, la maison est l’exemple de la Méthode', function () {
+  H.BATIMENTS_TYPES.forEach(function (b) {
+    const r = M.diagnostiquer(b.entrees, {}, H, {});
+    assert.deepEqual(r.manque, [], b.nom);
+    assert.ok(r.resultat.ratios.ef > 50 && r.resultat.ratios.ef < 700, b.nom + ' : ' + r.resultat.ratios.ef);
+  });
+  const maison = M.diagnostiquer(H.BATIMENTS_TYPES[0].entrees, {}, H, {});
+  assert.ok(proche(maison.modele.deperditions.total, 508.6, 1e-9));
+  const classement = M.influencesSurCas(H.BATIMENTS_TYPES, H, {});
+  assert.ok(classement.length > 50);
+  assert.ok(classement[0].cas);
+});

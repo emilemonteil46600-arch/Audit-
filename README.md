@@ -9,6 +9,7 @@ en fourchette et les travaux qui valent le coup (✅ à faire / 🟠 à discuter
 - HTML, CSS et JavaScript purs, sans installation. Chaque chiffre affiche son origine et sa source (onglet Données).
 - Seule l'adresse du bâtiment part vers des services publics (IGN, BAN, BDNB, ADEME, Panoramax).
 - Le calcul marche sans réseau (bouton « Exemple » ou saisie sans carte).
+- Onglet **Validation** : compare le moteur à des bâtiments dont tu connais les factures (biais, fourchette).
 
 ## Vérifier
 
