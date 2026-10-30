@@ -62,7 +62,66 @@
     return Math.round(valeur / pas) * pas;
   };
 
-  // Lit un nombre tapé à la française (« 1 250,5 ») ou à l'anglaise (« 1250.5 »).
+  // Arrondi d'affichage à n chiffres significatifs (ex. 2 → 34 946 devient 35 000). Jamais dans un calcul.
+  FLASH.significatif = function (valeur, chiffres) {
+    if (!valeur || !isFinite(valeur)) return valeur;
+    const pas = Math.pow(10, Math.floor(Math.log10(Math.abs(valeur))) - (chiffres || 2) + 1);
+    return Math.round(valeur / pas) * pas;
+  };
+
+  FLASH.telecharger = function (nomFichier, contenu, type) {
+    const url = URL.createObjectURL(new Blob([contenu], { type: type || 'application/octet-stream' }));
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = nomFichier;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
+  };
+
+  // Nom de fichier sûr, sans accents ni signes (repris de la boîte à outils).
+  FLASH.nomFichier = function (texte, defaut) {
+    const propre = String(texte || '')
+      .replace(/œ/g, 'oe').replace(/Œ/g, 'OE').replace(/æ/g, 'ae').replace(/Æ/g, 'AE')
+      .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^A-Za-z0-9 _-]+/g, ' ')
+      .trim().replace(/\s+/g, '-');
+    return propre || defaut;
+  };
+
+  // Copie un contenu mis en forme (pour Word) et sa version texte (repris de la boîte à outils).
+  FLASH.copierHtml = async function (html, texte) {
+    try {
+      if (global.ClipboardItem && navigator.clipboard && navigator.clipboard.write) {
+        await navigator.clipboard.write([new ClipboardItem({
+          'text/html': new Blob([html], { type: 'text/html' }),
+          'text/plain': new Blob([texte], { type: 'text/plain' })
+        })]);
+        return true;
+      }
+    } catch (e) { /* méthode de secours ci-dessous */ }
+    try {
+      const zone = document.createElement('div');
+      zone.innerHTML = html;
+      zone.style.position = 'fixed';
+      zone.style.left = '-9999px';
+      document.body.appendChild(zone);
+      const plage = document.createRange();
+      plage.selectNodeContents(zone);
+      const sel = global.getSelection();
+      sel.removeAllRanges();
+      sel.addRange(plage);
+      const ok = document.execCommand('copy');
+      sel.removeAllRanges();
+      zone.remove();
+      return ok;
+    } catch (e) {
+      return false;
+    }
+  };
+
+  // Lit un nombre tapé (« 1 250,5 ») ou à l'anglaise (« 1250.5 »).
   FLASH.lireNombre = function (texte) {
     if (typeof texte === 'number') return texte;
     if (texte === null || texte === undefined) return NaN;

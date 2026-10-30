@@ -1,8 +1,8 @@
-/* Tests de la logique du test de faisabilité : les exemples écrits en haut de calcul.js. */
+/* Tests de la logique de la carte (carte/calcul.js) : les exemples écrits en haut du fichier. */
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { charger, proche } = require('./aide-tests.js');
-const C = charger('faisabilite/calcul.js');
+const C = charger('carte/calcul.js');
 const R = 6371008.8;
 
 test('Surface au sol : carré de 0,0001° à 45° de latitude ≈ 87,4 m²', function () {
@@ -90,4 +90,69 @@ test('Adresses des services : seule l’adresse ou le point part', function () {
   const wfs = C.URLS.batimentsBdTopo([1, 43, 2, 44]);
   assert.match(wfs, /BBOX=43,1,44,2,urn:ogc:def:crs:EPSG::4326$/);
   Object.keys(C.URLS).forEach(function (k) { assert.equal(typeof C.URLS[k], 'function', k); });
+});
+
+test('Périmètre et mitoyenneté : deux maisons de 10 m × 10 m collées → 30 m exposés sur 40', function () {
+  const d = 10 / R * 180 / Math.PI;
+  const lat = 43.6, lon = 1.44;
+  const dLon = d / Math.cos(lat * Math.PI / 180);
+  const maison = [[lon, lat], [lon + dLon, lat], [lon + dLon, lat + d], [lon, lat + d], [lon, lat]];
+  const voisine = [[lon + dLon, lat], [lon + 2 * dLon, lat], [lon + 2 * dLon, lat + d], [lon + dLon, lat + d], [lon + dLon, lat]];
+  assert.ok(proche(C.perimetreM(maison, R), 40, 0.01));
+  const m = C.mitoyennete(maison, [voisine], R, 1);
+  assert.ok(proche(m.mitoyen, 10, 0.01));
+  assert.ok(proche(m.expose, 30, 0.01));
+  assert.equal(m.cotes.filter(function (c) { return c.mitoyen; }).length, 1);
+  // Une voisine à 3 m ne compte pas
+  const loin = voisine.map(function (p) { return [p[0] + 3 / R * 180 / Math.PI / Math.cos(lat * Math.PI / 180), p[1]]; });
+  assert.equal(C.mitoyennete(maison, [loin], R, 1).mitoyen, 0);
+});
+
+test('Lecture BD TOPO : hauteur, étages, année, matériaux, type de toiture', function () {
+  const b = C.lireBatimentBdTopo({ cleabs: 'BATIMENT0001', hauteur: 9.5, nombre_d_etages: 3, nombre_de_logements: 6,
+    usage_1: 'Résidentiel', date_d_apparition: '1972-01-01', materiaux_des_murs: '34', materiaux_de_la_toiture: '40' });
+  assert.equal(b.hauteur, 9.5);
+  assert.equal(b.etages, 3);
+  assert.equal(b.annee, 1972);
+  assert.deepEqual(b.murs, ['béton', 'briques']);
+  assert.equal(b.toitureType, 'terrasse');
+  assert.equal(C.lireBatimentBdTopo({ materiaux_de_la_toiture: '10' }).toitureType, 'combles');
+  assert.equal(C.lireBatimentBdTopo({ hauteur: null }).hauteur, null);
+  assert.equal(C.usageDepuisBdTopo('Résidentiel', 6, 500), 'logement-collectif');
+  assert.equal(C.usageDepuisBdTopo('Résidentiel', null, 120), 'logement-individuel');
+  assert.equal(C.usageDepuisBdTopo('Commercial et services', null, 800), 'bureaux');
+  assert.equal(C.usageDepuisBdTopo('Indifférencié', null, 800), null);
+});
+
+test('Énergies, BDNB, DPE et code postal', function () {
+  assert.equal(C.energieDepuisTexte('Gaz naturel'), 'gaz');
+  assert.equal(C.energieDepuisTexte('GPL'), 'propane');
+  assert.equal(C.energieDepuisTexte('Électricité'), 'electricite');
+  assert.equal(C.energieDepuisTexte('Bois – Granulés (pellets) ou briquettes'), 'bois-granules');
+  assert.equal(C.energieDepuisTexte('Réseau de Chauffage urbain'), 'reseau-chaleur');
+  assert.equal(C.energieDepuisTexte(''), null);
+  const g = C.lireBdnb({ batiment_groupe_id: 'bdnb-bg-1', annee_construction: 1975, type_energie_chauffage: 'Gaz' });
+  assert.equal(g.annee, 1975);
+  assert.equal(g.energieChauffage, 'gaz');
+  const d = C.lireDpe({ etiquette_dpe: 'D', conso_5_usages_par_m2_ep: 210, _geopoint: '43.6001,1.4401' }, 1.44, 43.6, R);
+  assert.equal(d.etiquette, 'D');
+  assert.equal(d.consoM2, 210);
+  assert.ok(d.distance > 10 && d.distance < 20);
+  assert.equal(C.departementDepuisCodePostal('31000'), '31');
+  assert.equal(C.departementDepuisCodePostal('20090'), '2A');
+  assert.equal(C.departementDepuisCodePostal('20200'), '2B');
+  assert.equal(C.departementDepuisCodePostal('97400'), '974');
+  assert.equal(C.departementDepuisCodePostal('3100'), null);
+  const a = C.lireAdresse({ geometry: { coordinates: [1.44, 43.6] }, properties: { label: '1 rue X 31000 Toulouse', postcode: '31000', id: '31555_x' } });
+  assert.equal(a.departement, '31');
+  assert.equal(C.lirePhotos([{ assets: { thumb: { href: 'https://x/t.jpg' } }, properties: { datetime: '2024-05-01T10:00:00Z' } }])[0].date, '2024-05-01');
+});
+
+test('Emprise d’un contour (pour cadrer la carte)', function () {
+  assert.deepEqual(C.emprise([[1, 43], [1.002, 43.001], [1.001, 43.003], [1, 43]]), [[1, 43], [1.002, 43.003]]);
+});
+
+test('Photos : seules les adresses https sont gardées', function () {
+  assert.equal(C.lirePhotos([{ assets: { thumb: { href: 'javascript:alert(1)' } } }]).length, 0);
+  assert.equal(C.lirePhotos([{ assets: { thumb: { href: 'https://x/t.jpg' }, sd: { href: 'http://x/s.jpg' } } }])[0].image, 'https://x/t.jpg');
 });

@@ -11,7 +11,7 @@
     hauteurEtage: {
       valeur: 3, unite: 'm',
       libelle: "Hauteur d'un étage (pour passer de la hauteur du bâtiment au nombre de niveaux)",
-      source: "Hypothèse de départ du projet (H), à comparer au nombre d'étages de la BD TOPO quand il existe",
+      source: "Hypothèse de départ du projet (H), à comparer au nombre d'étages de la BD TOPO quand il existe. Même valeur que geo.hauteurEtage du moteur",
       date: '2026-10-30', statut: 'exemple'
     },
     rayonTerre: {
@@ -24,6 +24,24 @@
       valeur: 40, unite: 'm',
       libelle: 'Rayon de recherche autour du point cliqué (bâtiments, DPE, photos)',
       source: "Convention de l'outil (H) : assez grand pour attraper le bâtiment, assez petit pour ne pas charger tout le quartier",
+      date: '2026-10-30', statut: 'exemple'
+    },
+    rayonVoisins: {
+      valeur: 150, unite: 'm',
+      libelle: 'Rayon autour du bâtiment choisi dans lequel on charge les bâtiments voisins (carte 3D, mitoyenneté)',
+      source: "Convention de l'outil (H) : assez pour voir le quartier sans surcharger le service de l'IGN",
+      date: '2026-10-30', statut: 'exemple'
+    },
+    toleranceMitoyen: {
+      valeur: 1, unite: 'm',
+      libelle: 'Écart maximal entre deux contours pour considérer un mur comme mitoyen',
+      source: "Convention de l'outil (H) : les contours de la BD TOPO sont précis à environ 1 m près",
+      date: '2026-10-30', statut: 'exemple'
+    },
+    rayonDpe: {
+      valeur: 20, unite: 'm',
+      libelle: "Un DPE sert à pré-remplir (année, énergie) s'il est à moins de cette distance du bâtiment",
+      source: "Convention de l'outil (H) : au-delà, le DPE concerne sans doute un autre bâtiment",
       date: '2026-10-30', statut: 'exemple'
     },
     seuilLent: {

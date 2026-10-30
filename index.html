@@ -3,67 +3,222 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Audit flash</title>
-  <meta name="description" content="Pré-diagnostic énergétique en 5 minutes : un bâtiment sur la carte, quelques questions, un ordre de grandeur de la consommation et des actions qui valent le coup.">
-  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23c4501b'/%3E%3Cpath d='M18 5 9 18h6l-1 9 9-13h-6z' fill='white'/%3E%3C/svg%3E">
+  <title>Audit flash — pré-diagnostic énergétique</title>
+  <meta name="description" content="Pré-diagnostic énergétique en 5 minutes : un bâtiment sur la carte en 3D, quelques questions, la consommation en fourchette et les travaux qui valent le coup.">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0' stop-color='%23ef8a4c'/%3E%3Cstop offset='1' stop-color='%23b8401a'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='32' height='32' rx='8' fill='url(%23g)'/%3E%3Cpath d='M6 15.5 16 7l10 8.5V26H6z' fill='none' stroke='white' stroke-width='2.2' stroke-linejoin='round'/%3E%3Cpath d='M17.5 12.5 13 19h3.5l-1 5 4.5-6.5h-3.5z' fill='white'/%3E%3C/svg%3E">
   <link rel="stylesheet" href="commun/style.css">
 </head>
-<body>
+<body class="outil">
+
+<!-- Icônes (une seule fois, réutilisées partout avec <use href="#i-…">) -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <linearGradient id="degrade-logo" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#ef8a4c"/><stop offset="1" stop-color="#b8401a"/></linearGradient>
+  </defs>
+  <symbol id="i-maison" viewBox="0 0 24 24"><path d="M3 11 12 4l9 7"/><path d="M5 10v10h14V10"/><path d="M10 20v-6h4v6"/></symbol>
+  <symbol id="i-immeuble" viewBox="0 0 24 24"><rect x="5" y="3" width="14" height="18" rx="1"/><path d="M9 7h1M14 7h1M9 11h1M14 11h1M9 15h1M14 15h1M11 21v-3h2v3"/></symbol>
+  <symbol id="i-bureau" viewBox="0 0 24 24"><rect x="3" y="7" width="18" height="13" rx="2"/><path d="M9 7V5a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2M3 13h18"/></symbol>
+  <symbol id="i-ecole" viewBox="0 0 24 24"><path d="M2 9l10-5 10 5-10 5z"/><path d="M6 11v5c0 1.5 2.7 3 6 3s6-1.5 6-3v-5"/><path d="M22 9v6"/></symbol>
+  <symbol id="i-commerce" viewBox="0 0 24 24"><path d="M4 9h16l-1-5H5z"/><path d="M5 9v11h14V9"/><path d="M9 20v-6h6v6"/></symbol>
+  <symbol id="i-sante" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="4"/><path d="M12 8v8M8 12h8"/></symbol>
+  <symbol id="i-sport" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3.6 9h16.8M3.6 15h16.8M12 3c3 3 3 15 0 18M12 3c-3 3-3 15 0 18"/></symbol>
+  <symbol id="i-salle" viewBox="0 0 24 24"><path d="M3 9 12 4l9 5"/><path d="M4 20h16M6 10v8M10 10v8M14 10v8M18 10v8"/></symbol>
+  <symbol id="i-mur" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="1"/><path d="M3 9h18M3 15h18M9 4v5M15 9v6M9 15v5"/></symbol>
+  <symbol id="i-toit" viewBox="0 0 24 24"><path d="M2 12 12 4l10 8"/><path d="M5 10v10h14V10"/><path d="M8 13h8"/></symbol>
+  <symbol id="i-plancher" viewBox="0 0 24 24"><path d="M3 14h18M3 18h18"/><path d="M6 14V8h12v6"/><path d="M7 21l2-3M12 21l2-3M17 21l2-3"/></symbol>
+  <symbol id="i-fenetre" viewBox="0 0 24 24"><rect x="4" y="3" width="16" height="18" rx="1"/><path d="M12 3v18M4 12h16"/></symbol>
+  <symbol id="i-ventilation" viewBox="0 0 24 24"><circle cx="12" cy="12" r="2"/><path d="M12 10c0-4 1-6 4-6 2 0 2 3 0 4l-4 2M14 12c4 0 6 1 6 4 0 2-3 2-4 0l-2-4M12 14c0 4-1 6-4 6-2 0-2-3 0-4l4-2M10 12c-4 0-6-1-6-4 0-2 3-2 4 0l2 4"/></symbol>
+  <symbol id="i-thermostat" viewBox="0 0 24 24"><path d="M14 14.8V5a2 2 0 0 0-4 0v9.8a4 4 0 1 0 4 0z"/><path d="M12 9v7"/></symbol>
+  <symbol id="i-flamme" viewBox="0 0 24 24"><path d="M12 3c1 4 6 6 6 11a6 6 0 0 1-12 0c0-3 2-4 2-7 2 1 3 3 3 5 1-2 1-6 1-9z"/></symbol>
+  <symbol id="i-pac" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="9" cy="12" r="4"/><path d="M9 8v8M5 12h8M16 9h2M16 12h2M16 15h2"/></symbol>
+  <symbol id="i-goutte" viewBox="0 0 24 24"><path d="M12 3s6 6.5 6 11a6 6 0 0 1-12 0c0-4.5 6-11 6-11z"/><path d="M9 15a3 3 0 0 0 3 3"/></symbol>
+  <symbol id="i-ampoule" viewBox="0 0 24 24"><path d="M9 18h6M10 21h4"/><path d="M12 3a6 6 0 0 0-3.5 10.9c.6.5 1 1.3 1 2.1h5c0-.8.4-1.6 1-2.1A6 6 0 0 0 12 3z"/></symbol>
+  <symbol id="i-flocon" viewBox="0 0 24 24"><path d="M12 2v20M4 7l16 10M4 17 20 7"/><path d="M9 4l3 2 3-2M9 20l3-2 3 2"/></symbol>
+  <symbol id="i-prise" viewBox="0 0 24 24"><path d="M9 3v5M15 3v5"/><path d="M6 8h12v3a6 6 0 0 1-12 0z"/><path d="M12 17v4"/></symbol>
+  <symbol id="i-euro" viewBox="0 0 24 24"><path d="M17 6.5A7 7 0 1 0 17 17.5"/><path d="M4 10h9M4 14h9"/></symbol>
+  <symbol id="i-feuille" viewBox="0 0 24 24"><path d="M5 19c0-8 6-14 15-14 0 9-6 15-14 15"/><path d="M5 19c3-4 6-7 10-9"/></symbol>
+  <symbol id="i-eclair" viewBox="0 0 24 24"><path d="M13 2 4 14h7l-1 8 9-12h-7z"/></symbol>
+  <symbol id="i-loupe" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></symbol>
+  <symbol id="i-cube" viewBox="0 0 24 24"><path d="M12 3 4 7.5v9L12 21l8-4.5v-9z"/><path d="M4 7.5 12 12l8-4.5M12 12v9"/></symbol>
+  <symbol id="i-cible" viewBox="0 0 24 24"><circle cx="12" cy="12" r="7"/><circle cx="12" cy="12" r="2"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></symbol>
+  <symbol id="i-photo" viewBox="0 0 24 24"><rect x="3" y="6" width="18" height="14" rx="2"/><circle cx="12" cy="13" r="3.5"/><path d="M8 6l1.5-2h5L16 6"/></symbol>
+  <symbol id="i-facture" viewBox="0 0 24 24"><path d="M6 3h12v18l-3-2-3 2-3-2-3 2z"/><path d="M9 8h6M9 12h6M9 16h3"/></symbol>
+  <symbol id="i-question" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M9.5 9.5a2.5 2.5 0 1 1 3.5 2.3c-.6.3-1 .8-1 1.5V14M12 17h.01"/></symbol>
+  <symbol id="i-calque" viewBox="0 0 24 24"><path d="m12 3 9 5-9 5-9-5z"/><path d="m3 13 9 5 9-5"/></symbol>
+  <symbol id="i-plan" viewBox="0 0 24 24"><path d="M3 6l6-2 6 2 6-2v14l-6 2-6-2-6 2z"/><path d="M9 4v14M15 6v14"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12 4.5 4.5L19 7"/></symbol>
+  <symbol id="i-alerte" viewBox="0 0 24 24"><path d="M12 3 2 20h20z"/><path d="M12 10v4M12 17h.01"/></symbol>
+  <symbol id="i-fleche" viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></symbol>
+  <symbol id="i-copie" viewBox="0 0 24 24"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V5a1 1 0 0 0-1-1H5a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h3"/></symbol>
+  <symbol id="i-telecharger" viewBox="0 0 24 24"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"/></symbol>
+  <symbol id="i-nouveau" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+  <symbol id="i-sablier" viewBox="0 0 24 24"><path d="M7 3h10M7 21h10M8 3c0 5 8 5 8 9s-8 4-8 9M16 3c0 5-8 5-8 9s8 4 8 9"/></symbol>
+</svg>
 
 <div class="bandeau-flash">Pré-diagnostic : ordre de grandeur, pas un audit réglementaire.</div>
-<header class="entete">
+
+<header class="entete app-entete">
   <div class="entete-interieur">
-    <a class="logo" href="index.html">
-      <svg width="28" height="28" viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="7" fill="var(--accent)"/><path d="M18 5 9 18h6l-1 9 9-13h-6z" fill="#fff"/></svg>
-      <span>Audit flash</span>
+    <a class="logo logo-flash" href="index.html" aria-label="Audit flash, accueil">
+      <svg width="40" height="40" viewBox="0 0 32 32" aria-hidden="true">
+        <rect width="32" height="32" rx="8" fill="url(#degrade-logo)"/>
+        <path d="M6 15.5 16 7l10 8.5V26H6z" fill="none" stroke="#fff" stroke-width="2.2" stroke-linejoin="round"/>
+        <path d="M17.5 12.5 13 19h3.5l-1 5 4.5-6.5h-3.5z" fill="#fff"/>
+      </svg>
+      <span class="logo-texte"><b>Audit flash</b><small>Pré-diagnostic énergétique en 5 minutes</small></span>
     </a>
+    <nav class="vues" role="tablist" aria-label="Vues">
+      <button role="tab" data-vue="diagnostic" aria-selected="true">Diagnostic</button>
+      <button role="tab" data-vue="methode" aria-selected="false">Méthode</button>
+      <button role="tab" data-vue="donnees" aria-selected="false">Données</button>
+    </nav>
+    <div class="actions-entete">
+      <button class="bouton" type="button" id="exemple" title="Charger la maison d'exemple (sans carte)"><svg class="ico"><use href="#i-maison"/></svg><span>Exemple</span></button>
+      <button class="bouton" type="button" id="nouveau" title="Tout effacer et recommencer"><svg class="ico"><use href="#i-nouveau"/></svg><span>Nouveau</span></button>
+      <button class="bouton principal" type="button" id="fiche" title="Fiche d'une page pour Word"><svg class="ico"><use href="#i-telecharger"/></svg><span>Fiche Word</span></button>
+    </div>
   </div>
 </header>
 
-<main class="page">
-  <h1>Audit flash</h1>
-  <p class="intro">Un pré-diagnostic énergétique en 5 minutes : tu cliques sur un bâtiment, tu réponds à quelques questions,
-    et tu sais à peu près combien il consomme, ce qui vaut le coup et ce qui ne vaut pas le coup.
-    Chaque chiffre affiche son origine et sa source : pas de boîte noire.</p>
+<main id="vue-diagnostic" class="app">
+  <section class="app-carte bloc" aria-label="Carte">
+    <div class="carte-barre">
+      <div class="recherche">
+        <svg class="ico" aria-hidden="true"><use href="#i-loupe"/></svg>
+        <input type="text" id="recherche" placeholder="Adresse du bâtiment (ou « latitude ; longitude »)" autocomplete="off"
+          role="combobox" aria-expanded="false" aria-controls="suggestions" aria-label="Adresse du bâtiment">
+        <ul id="suggestions" class="suggestions" role="listbox" hidden></ul>
+      </div>
+      <div class="segments" id="fonds" role="group" aria-label="Fond de carte">
+        <button type="button" data-fond="plan" aria-pressed="true"><svg class="ico"><use href="#i-plan"/></svg><span>Plan</span></button>
+        <button type="button" data-fond="ortho" aria-pressed="false"><svg class="ico"><use href="#i-photo"/></svg><span>Photo</span></button>
+        <button type="button" data-fond="osm" aria-pressed="false"><svg class="ico"><use href="#i-calque"/></svg><span>OSM</span></button>
+      </div>
+      <button type="button" class="bouton-icone" id="vue-3d" aria-pressed="true" title="Vue 3D ou 2D"><svg class="ico"><use href="#i-cube"/></svg><span>3D</span></button>
+      <button type="button" class="bouton-icone" id="recentrer" title="Recentrer sur le bâtiment"><svg class="ico"><use href="#i-cible"/></svg></button>
+    </div>
+    <div id="carte" class="carte-3d" role="application" aria-label="Carte des bâtiments">
+      <div class="carte-attente" id="carte-message"><svg class="ico"><use href="#i-sablier"/></svg> Chargement de la carte…</div>
+    </div>
+    <div class="carte-pied">
+      <div id="sources" class="sources" aria-live="polite"></div>
+      <span class="aide">Clique sur un bâtiment pour le choisir · <span class="legende-mitoyen">— mur mitoyen</span></span>
+    </div>
+  </section>
 
-  <div class="grille-outils">
-    <a class="outil" href="faisabilite/index.html">
-      <div class="icone" aria-hidden="true">
-        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
-      </div>
-      <h2>Étape 1 — Test de faisabilité</h2>
-      <p>Vérifie depuis ton navigateur quels services publics marchent vraiment : adresse, carte IGN, contours et hauteurs BD TOPO, BDNB, DPE ADEME, photos Panoramax.</p>
-      <div class="bas"><span class="badge info">à lancer</span></div>
-    </a>
-    <div class="outil a-venir">
-      <div class="icone" aria-hidden="true">
-        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 6v16l7-4 8 4 7-4V2l-7 4-8-4-7 4z"/><path d="M8 2v16M16 6v16"/></svg>
-      </div>
-      <h2>Carte</h2>
-      <p>Adresse ou clic → contour du bâtiment, surface approximative, pré-remplissage (année, usage, énergie).</p>
-      <div class="bas"><span class="badge bientot">après le test</span></div>
+  <aside class="app-panneau bloc" aria-label="Le bâtiment et les questions">
+    <div id="resume" class="resume" aria-live="polite"></div>
+    <div class="onglets-panneau" role="tablist" aria-label="Saisie">
+      <button role="tab" data-panneau="batiment" aria-selected="true"><svg class="ico"><use href="#i-immeuble"/></svg>Bâtiment</button>
+      <button role="tab" data-panneau="questions" aria-selected="false"><svg class="ico"><use href="#i-question"/></svg>Questions <span class="pastille" id="compte-questions"></span></button>
+      <button role="tab" data-panneau="factures" aria-selected="false"><svg class="ico"><use href="#i-facture"/></svg>Factures</button>
     </div>
-    <div class="outil a-venir">
-      <div class="icone" aria-hidden="true">
-        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="2" width="16" height="20" rx="2"/><path d="M8 6h8M8 11h2M14 11h2M8 15h2M14 15h2M8 19h8"/></svg>
-      </div>
-      <h2>Moteur de calcul</h2>
-      <p>6 à 10 questions, valeurs par défaut selon l'année et l'usage, calage sur factures, préconisations ✅ / 🟠 / ❌ avec temps de retour.</p>
-      <div class="bas"><span class="badge bientot">étape 2</span></div>
-    </div>
-    <div class="outil a-venir">
-      <div class="icone" aria-hidden="true">
-        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2 2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5M2 12l10 5 10-5"/></svg>
-      </div>
-      <h2>3D, photos, mode client</h2>
-      <p>Bâtiment en 3D, photos de rue, puis une version simplifiée pour un client.</p>
-      <div class="bas"><span class="badge bientot">étapes 3 et 4</span></div>
-    </div>
-  </div>
+    <section id="p-batiment" class="panneau-contenu"></section>
+    <section id="p-questions" class="panneau-contenu" hidden></section>
+    <section id="p-factures" class="panneau-contenu" hidden></section>
+  </aside>
 
-  <p class="aide">Pour aller plus loin sur un bâtiment : la <a href="https://emilemonteil46600-arch.github.io/boite-a-outils-thermique/">boîte à outils thermique</a>.</p>
+  <section class="app-resultats" id="resultats" aria-live="polite"></section>
 </main>
 
-<footer class="pied">Audit flash · HTML, CSS et JavaScript purs · code public, aucune donnée client.</footer>
+<main id="vue-methode" class="page methode" hidden>
+  <h1>Méthode</h1>
+  <p class="intro">Un pré-diagnostic, pas une boîte noire : voici chaque étape du calcul, avec ses formules et ses limites.
+    Toutes les valeurs utilisées sont dans l'onglet <b>Données</b>, avec leur source.</p>
+
+  <div class="etapes-methode">
+    <section class="bloc">
+      <h2><span class="num-etape">1</span> Le bâtiment</h2>
+      <p>La carte donne le contour du bâtiment (IGN BD TOPO), donc sa <b>surface au sol</b> et son <b>périmètre</b>. Sa hauteur divisée par 3 m (H) donne les <b>niveaux</b>, sauf si la BD TOPO donne le nombre d'étages. Les côtés collés à un voisin (à moins de 1 m) sont <b>mitoyens</b> : ils ne perdent presque pas de chaleur.</p>
+      <div class="formule">S plancher = S au sol × niveaux        S chauffée = S plancher × 0,80 à 0,90 selon l’usage
+A façades = périmètre exposé × hauteur      A vitrages = A façades × part vitrée
+A toiture = A plancher bas = S au sol      L ponts thermiques = périmètre exposé × (niveaux + 1)</div>
+    </section>
+    <section class="bloc">
+      <h2><span class="num-etape">2</span> Les déperditions</h2>
+      <p>Chaque paroi perd <b>U × A</b> watts par degré d'écart. U vient de ta réponse, ou de l'état le plus probable pour l'époque (méthode DPE 3CL). Le plancher sur terre-plein suit la norme NF EN ISO 13370 : le sol isole un peu, surtout sous les grands bâtiments.</p>
+      <div class="formule">H = Σ U × A  +  ψ × L  +  0,34 × n × V        (W/K)
+n = ventilation × (1 − récupération) + infiltrations      (volumes par heure)
+Terre-plein : B' = A / (0,5 P) ; dt = w + λ (Rsi + Rf + Rse) ; U = 2λ / (π B' + dt) × ln(π B' / dt + 1)</div>
+    </section>
+    <section class="bloc">
+      <h2><span class="num-etape">3</span> Les consommations</h2>
+      <p>Le besoin de chauffage suit la méthode des <b>degrés-jours</b> (DJU base 18 °C de la zone climatique). Le chauffage consomme ce besoin divisé par son rendement (ou son COP pour une pompe à chaleur). L'eau chaude dépend des occupants ; l'éclairage, les auxiliaires et les autres usages sont des ratios par m².</p>
+      <div class="formule">Besoin (kWh/an) = H × DJU × 24 / 1000 × intermittence × régulation
+Consommation = besoin / rendement
+ECS logement = occupants × 56 L/j × 1,163 Wh/(L·K) × (40 − 12) × 365 / 1000
+Facture = kWh × (PCS/PCI : 1,11 pour le gaz) × prix</div>
+    </section>
+    <section class="bloc">
+      <h2><span class="num-etape">4</span> La fourchette et la fiabilité</h2>
+      <p>Chaque paramètre a une incertitude : petite si tu l'as saisi, grande s'il est déduit de l'année. On pousse chaque paramètre à ± son incertitude et on regarde de combien bouge la consommation (Δ). Les erreurs étant indépendantes, on les cumule en <b>quadrature</b>. Le graphique « ce qui pèse dans la fourchette » te dit quoi vérifier en priorité en visite.</p>
+      <div class="formule">δ = √(Σ Δᵢ²)        fourchette = consommation ± δ
+Fiabilité : bonne si δ ≤ 15 %, moyenne si δ ≤ 30 %, faible au-delà</div>
+    </section>
+    <section class="bloc">
+      <h2><span class="num-etape">5</span> Le calage sur factures</h2>
+      <p>Avec les factures, on calcule pour chaque énergie <b>k = facture / calcul</b>. Chaque usage garde son k, même si une action change son énergie : k corrige le comportement réel (occupation, consigne), pas la chaudière. Les gains sont ensuite calculés sur ce modèle calé.</p>
+      <div class="formule">k = consommation facturée / consommation calculée        (0,7 à 1,3 : cohérent)</div>
+    </section>
+    <section class="bloc">
+      <h2><span class="num-etape">6</span> Les préconisations</h2>
+      <p>Chaque action est simulée sur le bâtiment : économie de l'année 1, coût TTC (ratios × quantités, + frais + TVA), <b>temps de retour brut et actualisé</b> (hausse du prix de l'énergie et actualisation, modifiables), puis comparaison à sa durée de vie. Dans un <b>bouquet</b>, les actions sont calculées dans l'ordre (enveloppe d'abord) : les gains ne s'additionnent pas, et la pompe à chaleur est dimensionnée après l'isolation.</p>
+      <div class="formule">TRB = coût / économie
+TRA = plus petit n tel que Σ (t = 1 → n) économie × (1 + i)^(t−1) / (1 + a)^t ≥ coût
+✅ à faire si TRA ≤ ½ durée de vie · 🟠 à discuter si TRA ≤ durée de vie · ❌ sinon</div>
+    </section>
+  </div>
+
+  <section class="bloc">
+    <h2>Exemple refait à la main</h2>
+    <p>Maison de plain-pied de 1970 à Toulouse (zone H2c, DJU 1 950), 10 m × 10 m au sol, 3 m de haut, chaudière gaz ancienne, tout le reste « je ne sais pas ». Bouton <b>Exemple</b> en haut pour la charger.</p>
+    <div class="formule">S chauffée = 100 × 0,80 = 80 m² ; V = 80 × 2,5 = 200 m³
+A façades = 40 × 3 = 120 m² → vitrages 18 m², murs 102 m² ; ponts : 40 × 2 = 80 m
+H = 1,6 × 102 + 2,9 × 18 + 1,0 × 100 + 2,0 × 0,5 × 100 + 0,4 × 80 + 0,34 × 0,9 × 200 = 508,6 W/K
+Besoin = 508,6 × 1 950 × 24 / 1000 × 0,9 = 21 422 kWh → / 0,72 = 29 753 kWh de gaz
+ECS = 2,2 × 56 × 1,163 × 28 × 365 / 1000 = 1 464 kWh → / (0,72 × 0,85) = 2 393 kWh
+Électricité = (3 + 2 + 30) × 80 = 2 800 kWh
+Facture ≈ (29 753 + 2 393) × 1,11 × 0,11 + 2 800 × 0,22 ≈ 4 541 €/an
+EP ≈ 411 kWhEP/m² → F ; CO₂ ≈ 92 kg/m² → F ; puissance ≈ 12,2 kW
+Combles (U 1,0 → 0,14) : ΔH = 86 W/K → − 5 031 kWh de gaz ≈ 614 €/an → ✅</div>
+  </section>
+
+  <section class="bloc">
+    <h2>Limites à garder en tête (H)</h2>
+    <ul class="liste-limites">
+      <li>Méthode simplifiée : pas d'apports solaires détaillés, pas d'inertie, pas de correction d'altitude des DJU.</li>
+      <li>Valeurs par défaut « état probable aujourd'hui » de l'époque : un bâtiment peut avoir été rénové… ou pas. C'est la visite qui tranche.</li>
+      <li>Coûts : ratios d'exemple hors aides (MaPrimeRénov', CEE) et hors travaux induits (échafaudage, désamiantage…).</li>
+      <li>L'étiquette affichée est <b>indicative</b> : ce n'est pas un DPE.</li>
+      <li>Données publiques (BD TOPO, BDNB, DPE) : utiles pour pré-remplir, à confirmer sur place.</li>
+    </ul>
+  </section>
+</main>
+
+<main id="vue-donnees" class="page" hidden>
+  <h1>Données</h1>
+  <p class="intro">Toutes les valeurs du calcul, avec leur source. Tu peux en modifier une : ta valeur est gardée dans ton navigateur (jamais envoyée) et passe en « modifiée ».
+    Les valeurs en <span class="badge exemple">exemple</span> sont des ordres de grandeur à confirmer.</p>
+  <div class="barre-boutons" style="margin-bottom:14px">
+    <input type="text" id="filtre-donnees" placeholder="Chercher une valeur (ex. gaz, combles, DJU…)" aria-label="Chercher une valeur" style="max-width:360px">
+    <button class="bouton" type="button" id="reinitialiser-donnees">Remettre les valeurs d'origine</button>
+  </div>
+  <div id="donnees"></div>
+</main>
+
+<footer class="pied">
+  Audit flash · données : IGN (Géoplateforme, BD TOPO), Base Adresse Nationale, BDNB (CSTB), ADEME (DPE), Panoramax, contributeurs OpenStreetMap ·
+  <a href="faisabilite/index.html">Test de faisabilité des services</a> ·
+  <a href="https://emilemonteil46600-arch.github.io/boite-a-outils-thermique/">Boîte à outils thermique</a>
+</footer>
+
+<script src="commun/commun.js"></script>
+<script src="donnees/sources.js"></script>
+<script src="donnees/hypotheses.js"></script>
+<script src="carte/calcul.js"></script>
+<script src="moteur/calcul.js"></script>
+<script src="moteur/graphiques.js"></script>
+<script src="carte/interface.js"></script>
+<script src="moteur/interface.js"></script>
 </body>
 </html>
