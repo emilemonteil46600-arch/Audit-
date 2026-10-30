@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Test de faisabilité — Audit flash</title>
+  <meta name="description" content="Vérifie depuis ton navigateur quels services publics (adresse, carte IGN, BD TOPO, BDNB, DPE ADEME, Panoramax) sont utilisables par l'Audit flash.">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23c4501b'/%3E%3Cpath d='M18 5 9 18h6l-1 9 9-13h-6z' fill='white'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="../commun/style.css">
+</head>
+<body>
+
+<div class="bandeau-flash">Pré-diagnostic : ordre de grandeur, pas un audit réglementaire.</div>
+<header class="entete">
+  <div class="entete-interieur">
+    <a class="logo" href="../index.html">
+      <svg width="28" height="28" viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="7" fill="var(--accent)"/><path d="M18 5 9 18h6l-1 9 9-13h-6z" fill="#fff"/></svg>
+      <span>Audit flash</span>
+    </a>
+    <span class="fil">› <b>Test de faisabilité</b></span>
+  </div>
+</header>
+
+<main class="page">
+  <h1>Test de faisabilité des données publiques</h1>
+  <p class="intro">Avant de construire la vraie carte, on vérifie depuis <b>ton</b> navigateur quels services publics répondent vraiment à une page web :
+    sans clé, sans blocage (CORS), assez vite, et avec des données utiles. Seule l'adresse (ou le point) part vers ces services, jamais le nom d'un client.</p>
+
+  <section class="carte">
+    <form id="formulaire" class="ligne-adresse">
+      <div class="champ">
+        <label for="adresse">Adresse d'un bâtiment (ou coordonnées « latitude ; longitude »)</label>
+        <input type="text" id="adresse" value="1 place du Capitole 31000 Toulouse" autocomplete="off">
+      </div>
+      <button class="bouton principal" id="lancer" type="submit">Lancer les tests</button>
+    </form>
+    <p class="aide" id="point"></p>
+    <p class="alerte attention" id="message" role="alert"></p>
+  </section>
+
+  <section class="carte" id="bloc-services" hidden>
+    <div class="barre-boutons" style="justify-content: space-between; margin-bottom: 10px">
+      <h2 style="margin:0">Résultat service par service</h2>
+      <button class="bouton" id="copier" type="button">Copier le résultat pour Claude</button>
+    </div>
+    <p class="aide">✅ utilisable · 🟠 répond mais lent ou rien d'utile ici · ❌ inutilisable depuis une page web. Les conditions d'utilisation sont des hypothèses (H) à relire sur la doc officielle.</p>
+    <div class="defilement">
+      <table class="table-services">
+        <thead><tr><th></th><th>Service</th><th>Résultat ici</th><th class="num">Temps</th><th>Conditions (H)</th></tr></thead>
+        <tbody id="corps-services"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="carte" id="bloc-carte" hidden>
+    <div class="barre-boutons" style="justify-content: space-between; margin-bottom: 10px">
+      <h2 style="margin:0">Le bâtiment sur la carte</h2>
+      <button class="bouton" id="vue-ortho" type="button">Voir la photo aérienne</button>
+    </div>
+    <p class="aide">Clique sur un autre bâtiment pour relancer les tests « bâtiment ». Le volume orange est le contour BD TOPO monté à sa hauteur (test de la 3D).</p>
+    <div class="cadre-carte" id="cadre-carte"></div>
+    <h3 style="margin-top:16px">Surface approximative</h3>
+    <div id="surface"></div>
+    <h3 style="margin-top:16px">Photos de rue autour (Panoramax)</h3>
+    <div class="vignettes" id="photos"></div>
+  </section>
+
+  <section class="carte">
+    <h2>Valeurs d'exemple utilisées par ce test</h2>
+    <p class="alerte attention">Ces valeurs sont des hypothèses (H) en statut « exemple » : à confirmer avant de s'en servir pour de vrai.</p>
+    <ul id="valeurs-exemple"></ul>
+  </section>
+</main>
+
+<footer class="pied">Audit flash · données : IGN (Géoplateforme, BD TOPO), Base Adresse Nationale, BDNB (CSTB), ADEME, Panoramax, contributeurs OpenStreetMap.</footer>
+
+<script src="../commun/commun.js"></script>
+<script src="../donnees/sources.js"></script>
+<script src="../donnees/services.js"></script>
+<script src="calcul.js"></script>
+<script src="interface.js"></script>
+</body>
+</html>
