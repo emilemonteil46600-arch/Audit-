@@ -10,6 +10,7 @@ en fourchette et les travaux qui valent le coup (✅ à faire / 🟠 à discuter
 - Seule l'adresse du bâtiment part vers des services publics (IGN, BAN, BDNB, ADEME, Panoramax).
 - Le calcul marche sans réseau (bouton « Exemple » ou saisie sans carte).
 - Onglet **Validation** : compare le moteur à des bâtiments dont tu connais les factures (biais, fourchette).
+- **Vue client** : une page simple à montrer ou à imprimer en PDF, et un texte prêt pour un mail.
 
 ## Vérifier
 

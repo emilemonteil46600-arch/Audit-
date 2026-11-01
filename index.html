@@ -8,7 +8,7 @@
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0' stop-color='%23ef8a4c'/%3E%3Cstop offset='1' stop-color='%23b8401a'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='32' height='32' rx='8' fill='url(%23g)'/%3E%3Cpath d='M6 15.5 16 7l10 8.5V26H6z' fill='none' stroke='white' stroke-width='2.2' stroke-linejoin='round'/%3E%3Cpath d='M17.5 12.5 13 19h3.5l-1 5 4.5-6.5h-3.5z' fill='white'/%3E%3C/svg%3E">
   <link rel="stylesheet" href="commun/style.css">
 </head>
-<body class="outil">
+<body>
 
 <!-- Icônes (une seule fois, réutilisées partout avec <use href="#i-…">) -->
 <svg width="0" height="0" style="position:absolute" aria-hidden="true">
@@ -52,6 +52,10 @@
   <symbol id="i-copie" viewBox="0 0 24 24"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V5a1 1 0 0 0-1-1H5a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h3"/></symbol>
   <symbol id="i-telecharger" viewBox="0 0 24 24"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"/></symbol>
   <symbol id="i-nouveau" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+  <symbol id="i-client" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4.4 3.6-8 8-8s8 3.6 8 8"/></symbol>
+  <symbol id="i-imprimer" viewBox="0 0 24 24"><path d="M7 9V3h10v6"/><rect x="3" y="9" width="18" height="8" rx="2"/><path d="M7 14h10v7H7z"/></symbol>
+  <symbol id="i-mail" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3 7 9 6 9-6"/></symbol>
+  <symbol id="i-retour" viewBox="0 0 24 24"><path d="M19 12H5M11 6l-6 6 6 6"/></symbol>
   <symbol id="i-sablier" viewBox="0 0 24 24"><path d="M7 3h10M7 21h10M8 3c0 5 8 5 8 9s-8 4-8 9M16 3c0 5-8 5-8 9s8 4 8 9"/></symbol>
 </svg>
 
@@ -76,6 +80,7 @@
     <div class="actions-entete">
       <button class="bouton" type="button" id="exemple" title="Charger la maison d'exemple (sans carte)"><svg class="ico"><use href="#i-maison"/></svg><span>Exemple</span></button>
       <button class="bouton" type="button" id="nouveau" title="Tout effacer et recommencer"><svg class="ico"><use href="#i-nouveau"/></svg><span>Nouveau</span></button>
+      <button class="bouton" type="button" id="bouton-client" title="Page simple à montrer ou à imprimer pour un client"><svg class="ico"><use href="#i-client"/></svg><span>Vue client</span></button>
       <button class="bouton principal" type="button" id="fiche" title="Fiche d'une page pour Word"><svg class="ico"><use href="#i-telecharger"/></svg><span>Fiche Word</span></button>
     </div>
   </div>
@@ -224,6 +229,10 @@ Combles (U 1,0 → 0,14) : ΔH = 86 W/K → − 5 031 kWh de gaz ≈ 614 €/an 
   <div id="donnees"></div>
 </main>
 
+<main id="vue-client" class="page page-client" hidden>
+  <div id="client"></div>
+</main>
+
 <main id="vue-validation" class="page" hidden>
   <h1>Validation du moteur</h1>
   <p class="intro">Le moteur tombe-t-il juste ? Compare-le à des bâtiments dont tu connais la <b>vraie consommation</b> (factures) :
@@ -244,6 +253,7 @@ Combles (U 1,0 → 0,14) : ΔH = 86 W/K → − 5 031 kWh de gaz ≈ 614 €/an 
 <script src="carte/calcul.js"></script>
 <script src="moteur/calcul.js"></script>
 <script src="moteur/graphiques.js"></script>
+<script src="moteur/client.js"></script>
 <script src="carte/interface.js"></script>
 <script src="moteur/interface.js"></script>
 </body>

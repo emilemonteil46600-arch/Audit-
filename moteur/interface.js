@@ -22,6 +22,7 @@
   let modifs = F.lire('donnees.v1', {}) || {};      // tes valeurs (onglet Données)
   let validees = F.lire('validees.v1', {}) || {};   // valeurs d'exemple vérifiées et gardées : { id: date }
   let cas = F.lire('cas.v1', []) || [];             // tes cas de référence (onglet Validation)
+  let signature = F.lire('signature.v1', '') || ''; // « Préparé par » de la vue client (reste dans ton navigateur)
   let r = null;
 
   function options() { return { validees: validees, djuFactures: etat.djuFactures }; }
@@ -51,44 +52,10 @@
     sauver();
   }
 
-  /* ---------- Mise en forme (on arrondit l'affichage, jamais le calcul) ---------- */
+  /* ---------- Mise en forme (dans commun/commun.js, partagée avec la vue client) ---------- */
   const sig = function (v, n) { return F.significatif(v, n || 2); };
-
-  function uniteEnergie(v) {
-    const a = Math.abs(v);
-    if (a >= 1e6) return { div: 1e6, unite: 'GWh', dec: 1 };
-    if (a >= 1e4) return { div: 1e3, unite: 'MWh', dec: a >= 1e5 ? 0 : 1 };
-    return { div: 1, unite: 'kWh', dec: 0 };
-  }
-  function energie(v) {
-    if (v === null || !isFinite(v)) return '–';
-    const u = uniteEnergie(v);
-    return nb(u.div === 1 ? sig(v, 2) : v / u.div, u.div === 1 ? 0 : u.dec) + ' ' + u.unite;
-  }
-  function fourchette(v, delta, format) {
-    return format(Math.max(0, v - delta)) + ' – ' + format(v + delta);
-  }
-  function fourchetteEnergie(v, delta) {
-    const u = uniteEnergie(v);
-    const f = function (x) { return nb(sig(x / u.div, 2), u.dec && sig(x / u.div, 2) < 10 ? 1 : 0); };
-    return f(Math.max(0, v - delta)) + ' – ' + f(v + delta) + ' ' + u.unite;
-  }
-  function euros(v, n) {
-    if (v === null || !isFinite(v)) return '–';
-    return nb(Math.abs(v) >= 100 ? sig(v, n || 3) : Math.round(v)) + ' €';
-  }
-  function ans(v) {
-    if (v === null || v === undefined || !isFinite(v)) return 'jamais';
-    if (v < 1) return '< 1 an';
-    return nb(v, v < 10 ? 1 : 0) + ' an' + (v >= 2 ? 's' : '');
-  }
-  function plageAns(bas, haut) {
-    if (bas === null || haut === null) return 'jamais';
-    const b = Math.max(1, Math.round(bas)), h = Math.max(1, Math.round(haut));
-    return b === h ? b + ' an' + (b > 1 ? 's' : '') : b + ' – ' + h + ' ans';
-  }
-  function pct(v) { return nb(v * 100) + ' %'; }
-  function plageEuros(bas, haut) { return nb(sig(bas, 2)) + ' – ' + nb(sig(haut, 2)) + ' €'; }
+  const energie = F.energie, fourchette = F.fourchette, fourchetteEnergie = F.fourchetteEnergie, euros = F.euros;
+  const ans = F.ans, plageAns = F.plageAns, pct = F.pct, plageEuros = F.plageEuros;
 
   const NOMS_USAGES = { chauffage: 'Chauffage', ecs: 'Eau chaude', froid: 'Climatisation', eclairage: 'Éclairage', auxiliaires: 'Auxiliaires', autres: 'Autres usages' };
   const ICONES_USAGES = { chauffage: 'flamme', ecs: 'goutte', froid: 'flocon', eclairage: 'ampoule', auxiliaires: 'ventilation', autres: 'prise' };
@@ -157,7 +124,7 @@
     const b = etat.batiment || {}, e = entrees(), comp = etat.complements || {};
     const adresse = b.adresse && b.adresse.label;
     $('#b-adresse').innerHTML = adresse ?
-      ico('maison') + '<div><b>' + esc(adresse) + '</b>' + (b.contour ? '<span>Pas le bon bâtiment ? Clique sur le bon, sur la carte.</span>' : '') + '</div>' :
+      ico('maison') + '<div><b>' + (b.adresse.cas ? 'Cas de référence : ' : '') + esc(adresse) + '</b>' + (b.contour ? '<span>Pas le bon bâtiment ? Clique sur le bon, sur la carte.</span>' : '') + '</div>' :
       ico('loupe') + '<div><b>Aucun bâtiment choisi</b><span>Cherche une adresse au-dessus de la carte, clique sur un bâtiment, ou saisis-le sans carte.</span></div>';
 
     let v = '';
@@ -434,7 +401,7 @@
     });
     const h = r.modele.deperditions;
     const parois = ['murs', 'vitrages', 'toiture', 'plancher', 'ponts', 'air'].map(function (k) {
-      return { id: k, nom: NOMS_PAROIS[k], icone: ICONES_PAROIS[k], valeur: h[k], texte: nb(sig(h[k], 2)) + ' W/K · ' + pct(h[k] / h.total) };
+      return { id: k, nom: NOMS_PAROIS[k], icone: ICONES_PAROIS[k], valeur: h[k], texte: nb(sig(h[k], 2)) + ' W/K · ' + pct(h.parts[k]) };
     }).sort(function (a, b) { return b.valeur - a.valeur; });
     const et = r.resultat.etiquette;
     const seuils = ['A', 'B', 'C', 'D', 'E', 'F'].map(function (l) { return M.creerDonnees(H, modifs).v('dpe.ep.' + l); });
@@ -760,6 +727,32 @@
     afficherDonnees();
   }
 
+  /* ---------- Vue client (contenu dans moteur/client.js) ---------- */
+  function contexteClient() {
+    const b = etat.batiment || {};
+    return { adresse: b.adresse && b.adresse.label, date: new Date().toLocaleDateString('fr-FR'), preparePar: signature, bouquet: etat.bouquet };
+  }
+
+  function afficherClient() {
+    const pret = r && !r.erreur && !r.manque.length;
+    $('#client').innerHTML = '<div class="client-barre">' +
+      '<button type="button" class="bouton" data-vue-lien="diagnostic">' + ico('retour') + 'Retour au diagnostic</button>' +
+      '<label class="client-signature"><span>Préparé par</span><input type="text" data-signature maxlength="80" placeholder="ton nom, ta société (facultatif)" value="' + esc(signature) + '"></label>' +
+      '<button type="button" class="bouton" data-action="copier-mail"' + (pret ? '' : ' disabled') + '>' + ico('mail') + 'Copier le texte pour un mail</button>' +
+      '<button type="button" class="bouton principal" data-action="imprimer"' + (pret ? '' : ' disabled') + '>' + ico('imprimer') + 'Imprimer / PDF</button></div>' +
+      (pret ? window.VueClient.html(r, contexteClient()) :
+        '<section class="bloc accueil-client"><h2>Choisis d’abord un bâtiment</h2><p>La vue client se remplit dès qu’un bâtiment est calculé (carte, saisie sans carte ou bouton Exemple).</p></section>');
+  }
+
+  function copierMail() {
+    if (!r || r.erreur || r.manque.length) return;
+    const texte = window.VueClient.texteMail(r, contexteClient());
+    const html = texte.split('\n\n').map(function (bloc) { return '<p>' + esc(bloc).replace(/\n/g, '<br>') + '</p>'; }).join('');
+    F.copierHtml(html, texte).then(function (ok) {
+      F.toast(ok ? 'Texte copié : colle-le dans ton mail (Ctrl+V), relis-le, puis envoie.' : 'Copie impossible dans ce navigateur.');
+    });
+  }
+
   /* ---------- Onglet Validation : tes cas de référence ---------- */
   function garderCas() {
     if (!r || r.erreur || r.manque.length || !r.calage.actif) { F.toast('Il faut un bâtiment et ses factures.'); return; }
@@ -837,7 +830,7 @@
     });
     etat.factures = copie(c.factures);
     etat.djuFactures = c.djuFactures || null;
-    etat.batiment = { adresse: { label: 'Cas de référence : ' + c.nom } };
+    etat.batiment = { adresse: { label: c.nom, cas: true } };
     window.CarteFlash.effacer();
     $('#recherche').value = '';
     recalculer();
@@ -974,8 +967,11 @@
     $('#vue-methode').hidden = vue !== 'methode';
     $('#vue-donnees').hidden = vue !== 'donnees';
     $('#vue-validation').hidden = vue !== 'validation';
+    $('#vue-client').hidden = vue !== 'client';
+    document.body.classList.toggle('mode-client', vue === 'client');
     if (vue === 'donnees') afficherDonnees();
     if (vue === 'validation') afficherValidation();
+    if (vue === 'client') afficherClient();
     window.scrollTo(0, 0);
   }
 
@@ -990,6 +986,7 @@
     $('#exemple').addEventListener('click', chargerExemple);
     $('#nouveau').addEventListener('click', nouveau);
     $('#fiche').addEventListener('click', telechargerFiche);
+    $('#bouton-client').addEventListener('click', function () { ouvrirVue('client'); });
 
     // Questions : tuiles, « je ne sais pas », année, occupants
     $('#p-questions').addEventListener('click', function (e) {
@@ -1017,6 +1014,10 @@
         const n = F.lireNombre(champ.value);
         if (n > 0) etat.factures[champ.dataset.facture] = n; else delete etat.factures[champ.dataset.facture];
         recalculer();
+      } else if (champ.dataset.signature !== undefined) {
+        signature = champ.value.trim();
+        F.ecrire('signature.v1', signature);
+        afficherClient();
       } else if (champ.dataset.dju) {
         const n = F.lireNombre(champ.value);
         etat.djuFactures = n > 0 ? n : null;
@@ -1055,6 +1056,8 @@
       else if (action === 'telecharger-fiche') telechargerFiche();
       else if (action === 'copier-fiche') copierFiche();
       else if (action === 'garder-cas') garderCas();
+      else if (action === 'imprimer') window.print();
+      else if (action === 'copier-mail') copierMail();
       else if (action === 'exporter-cas') exporterCas();
       else if (action === 'toutes-energies') { toutesEnergies = !toutesEnergies; a.textContent = toutesEnergies ? 'Masquer les énergies inutilisées' : 'Afficher toutes les énergies'; majFactures(); }
     });

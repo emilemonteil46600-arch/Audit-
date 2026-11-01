@@ -127,7 +127,7 @@ const deborde = function (page) {
   const navigateur = await chromium.launch({ args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'] });
 
   console.log('Parcours complet (services simulés) :');
-  const page = await nouvellePage(navigateur, { viewport: { width: 1440, height: 950 } });
+  const page = await nouvellePage(navigateur, { viewport: { width: 1440, height: 950 }, permissions: ['clipboard-read', 'clipboard-write'] });
   await page.goto(url('index.html'));
   ok(await page.isVisible('.accueil'), 'accueil affiché avant de choisir un bâtiment');
   await page.waitForSelector('.maplibregl-canvas', { timeout: 20000 }).catch(function () {});
@@ -204,8 +204,27 @@ const deborde = function (page) {
   ok(contenu.format === 'audit-flash-cas' && contenu.cas.length === 2, 'export des cas de référence (JSON)');
   ok(await page.isHidden('#vue-diagnostic'), 'Validation : le diagnostic est masqué');
   await page.screenshot({ path: path.join(SORTIE, 'outil-validation.png'), fullPage: true });
-  await page.click('[data-ouvrir-cas]');
+  await page.click('tr:has-text("Maison exemple") [data-ouvrir-cas]');
   ok(!(await page.isHidden('#vue-diagnostic')) && /Cas de référence/.test(await page.textContent('#b-adresse')), 'un cas se rouvre dans le diagnostic');
+
+  // Vue client : page simple, texte de mail, impression
+  await page.click('#bouton-client');
+  const client = await page.textContent('#client');
+  ok(await page.isHidden('#vue-diagnostic') && /Ce que nous recommandons/.test(client) && /Prochaines étapes/.test(client), 'vue client affichée');
+  ok(/Isoler les combles/.test(client) && /Ce qui ne vaut pas le coup ici/.test(client) && /votre|vos /i.test(client), 'vue client : recommandations, ce qui ne vaut pas le coup, vouvoiement');
+  ok(/ont servi à caler/.test(client) && !/Cas de référence/.test(await page.textContent('.client-titre h1')), 'vue client : calage mentionné, titre sans jargon interne');
+  await page.fill('[data-signature]', 'Émile');
+  await page.press('[data-signature]', 'Tab');
+  ok(/Préparé par Émile/.test(await page.textContent('.client-date')), '« Préparé par » sur la page client');
+  await page.click('[data-action="copier-mail"]');
+  await page.waitForTimeout(300);
+  const mail = await page.evaluate(function () { return navigator.clipboard.readText().catch(function () { return ''; }); });
+  ok(/^Bonjour,/.test(mail) && /Isoler les combles/.test(mail) && /Bien cordialement,\nÉmile/.test(mail), 'texte de mail copié (' + mail.split('\n').length + ' lignes)');
+  await page.emulateMedia({ media: 'print' });
+  ok(await page.isHidden('.entete') && await page.isVisible('.client-page') && await page.isHidden('.client-barre'), 'impression : seulement la page client');
+  await page.pdf({ path: path.join(SORTIE, 'vue-client.pdf'), format: 'A4', printBackground: true });
+  await page.emulateMedia({ media: 'screen' });
+  await page.screenshot({ path: path.join(SORTIE, 'outil-client.png'), fullPage: true });
   await page.close();
 
   console.log('Sans réseau (tout bloqué) :');
@@ -230,6 +249,8 @@ const deborde = function (page) {
           await pg.click('[data-vue="' + vue + '"]');
           ok(!(await deborde(pg)), p + ' › ' + vue + ' (' + theme + ') : pas de défilement horizontal');
         }
+        await pg.click('#bouton-client');
+        ok(!(await deborde(pg)), p + ' › vue client (' + theme + ') : pas de défilement horizontal');
         await pg.click('[data-vue="diagnostic"]');
         await pg.click('[data-panneau="questions"]');
       }

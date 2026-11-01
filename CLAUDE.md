@@ -54,9 +54,10 @@ ne vaut pas le coup (« la toiture oui, le vitrage non, déjà du double vitrage
 - Structure :
   ```
   index.html                  l'outil : carte 3D + panneau (Bâtiment / Questions / Factures) + résultats ;
-                              vues Diagnostic · Méthode · Données · Validation ; icônes SVG (symboles #i-…) et logo
+                              vues Diagnostic · Méthode · Données · Validation + Vue client ; icônes SVG (symboles #i-…) et logo
   commun/style.css            style clair/sombre (variables CSS), repris de la boîte à outils + styles de l'outil
-  commun/commun.js            objet FLASH : stockage préfixé « flash. », nombres FR, arrondis d'affichage,
+  commun/commun.js            objet FLASH : stockage préfixé « flash. », nombres FR, arrondis d'affichage, mise en forme
+                              des énergies / € / années (energie, fourchetteEnergie, euros, plageEuros, ans, plageAns, pct),
                               téléchargement, copie pour Word, toast
   donnees/hypotheses.js       HYPOTHESES_FLASH : ~300 valeurs du moteur (U, rendements, ratios, prix, DJU, coûts,
                               durées de vie, incertitudes…) avec source / date / statut ; listes des choix ; zones par département ;
@@ -71,6 +72,8 @@ ne vaut pas le coup (« la toiture oui, le vitrage non, déjà du double vitrage
                               EP / CO₂ / €, étiquette, fourchette, calage (+ correction climatique), actions, bouquets, rentabilité
                               → MoteurCalcul.diagnostiquer ; influences (valeurs qui pèsent le plus) ; evaluerCas / statistiquesCas
   moteur/graphiques.js        dessins HTML/SVG (anneau, barres, tornade, cascade, étiquette, jauge, trésorerie, nuage), AUCUN calcul
+  moteur/client.js            VueClient : page client (vouvoiement, sans jargon, imprimable A4 en 2 pages) + texte de mail,
+                              AUCUN calcul (les mots et la mise en forme seulement)
   moteur/interface.js         questions en tuiles, vignettes, résultats, fiche Word, onglets Données (priorités, « je valide »)
                               et Validation (cas de référence, export / import JSON), état, AUCUN calcul
   faisabilite/                page de test des services publics depuis le navigateur (utilise carte/calcul.js)
@@ -122,7 +125,8 @@ ne vaut pas le coup (« la toiture oui, le vitrage non, déjà du double vitrage
   **partagent le même localStorage**. Toutes les clés de ce site passent par `FLASH.cle()` et commencent par
   **`flash.`** : `flash.etat.v1` (bâtiment, réponses, factures, DJU des factures), `flash.donnees.v1` (valeurs modifiées
   dans Données), `flash.validees.v1` (valeurs d'exemple validées par Émile : { id: date }), `flash.cas.v1` (cas de
-  référence : réponses + factures, **sans adresse** ; nom libre, à donner sans nom de client).
+  référence : réponses + factures, **sans adresse** ; nom libre, à donner sans nom de client), `flash.signature.v1`
+  (« Préparé par » de la vue client, saisi par Émile, jamais dans le dépôt).
   Ne **jamais** écrire une clé `bao.*` (refusé par `FLASH.cle`, vérifié par les tests), sauf plus tard via le bouton
   « Approfondir » explicitement validé par Émile. **Ne pas renommer ces clés sans migration.**
 
@@ -133,7 +137,7 @@ ne vaut pas le coup (« la toiture oui, le vitrage non, déjà du double vitrage
 
 ## Vérifications avant de publier
 
-1. `node --test` à la racine (49 tests) : syntaxe, scripts des pages, bandeau pré-diagnostic, versions de CDN fixées,
+1. `node --test` à la racine (51 tests) : syntaxe, scripts des pages, bandeau pré-diagnostic, versions de CDN fixées,
    pas de clé `bao.*`, stockage préfixé, valeurs sourcées (et chaque choix a ses valeurs), 96 départements,
    et les exemples :
    - carte : carré de 0,0001° à 45° → **87,4 m²** ; 240 m² × 3 niveaux (9,5 m / 3 m) = **720 m²** ;
@@ -149,8 +153,9 @@ ne vaut pas le coup (« la toiture oui, le vitrage non, déjà du double vitrage
 2. `node tests/navigateur.js` (Playwright ; `MAPLIBRE_LOCAL=…/maplibre-gl/dist` si unpkg est inaccessible) :
    parcours complet avec services simulés (adresse → bâtiment 3D → mitoyenneté 19 % → BDNB → question vitrage →
    factures → DJU de l'année → garder comme cas → bouquet → fiche Word → Données (priorités, « Je valide », modification)
-   → Méthode → 2e cas → Validation (stats, nuage, export JSON, rouvrir un cas)), vues bien masquées, mode sans réseau,
-   390 px clair/sombre (Diagnostic, Données, Méthode, Validation).
+   → Méthode → 2e cas → Validation (stats, nuage, export JSON, rouvrir un cas) → Vue client (recommandations,
+   « Préparé par », texte de mail relu dans le presse-papiers, impression : seulement la page, PDF A4)), vues bien masquées,
+   mode sans réseau, 390 px clair/sombre (Diagnostic, Données, Méthode, Validation, Vue client).
 3. Si un exemple de calcul change, mettre à jour **en même temps** le commentaire du `calcul.js`, l'onglet Méthode
    (index.html), le test et ce fichier.
 
@@ -163,4 +168,5 @@ ne vaut pas le coup (« la toiture oui, le vitrage non, déjà du double vitrage
 | Moteur | **V1** complet (voir plus haut), 300 valeurs d'exemple sourcées « de mémoire » (réseau fermé pour Claude) : **à vérifier** (3CL, DPE, DJU, coefficients). |
 | Interface | **V1** : résumé collant, vignettes avec origine, questions en tuiles (« supposé » en pointillés), factures + k + DJU de l'année, 6 indicateurs, 4 graphiques, préconisations ✅/🟠/❌ avec jauge et trésorerie, bouquets + cascade + étiquette avant/après, liste de visite, fiche Word (téléchargement .doc + copie), onglets Méthode, Données et Validation. |
 | Fiabiliser (30/10/2026, suite) | **Fait** : classement des valeurs qui pèsent le plus + « Je valide » ; banc de validation (cas de référence, biais, nuage, export / import) ; correction climatique des factures. Le haut du classement pour la maison type : rendement de la chaudière actuelle, effet de la régulation, rendement condensation, prix et PCS/PCI du gaz, U des murs par défaut. **Émile n'a pas encore pu fusionner (pas d'accès à GitHub ce jour-là)** : tout est sur la PR #2. |
-| À faire ensuite (au choix d'Émile) | 1) fusionner la PR #2, lancer le test de faisabilité et l'outil sur de vraies adresses ; 2) saisir 3 à 5 cas de référence (anciens audits, sans nom) et valider le haut de « À vérifier en priorité » ; 3) bouton « Approfondir » vers la boîte à outils ; 4) mode client simplifié ; 5) photovoltaïque, aides (CEE, MaPrimeRénov'), DJU par station ; 6) passer à MapLibre 6 (6.16.0 publiée le 25/10/2026, guide de migration à lire). |
+| Vue client (01/11/2026) | **Fait** : bouton « Vue client » : résultat en clair (fourchette, facture, étiquette, précision), où part l'énergie, ce que nous recommandons (✅ puis 🟠, mots simples, économie, coût TTC hors aides, remboursé en…), ce qui ne vaut pas le coup, programme conseillé (cascade), prochaines étapes (visite, factures, aides citées sans montant, devis) ; « Préparé par » ; Imprimer / PDF (A4, 2 pages) ; texte prêt pour un mail. Vouvoiement (document client). Toujours sur la PR #2 : **Émile ne peut fusionner que le lundi 2 novembre**. |
+| À faire ensuite (au choix d'Émile) | 1) fusionner la PR #2, lancer le test de faisabilité et l'outil sur de vraies adresses ; 2) saisir 3 à 5 cas de référence (anciens audits, sans nom) et valider le haut de « À vérifier en priorité » ; 3) bouton « Approfondir » vers la boîte à outils (à valider par Émile : il écrira des clés `bao.*`) ; 4) photovoltaïque en toiture (surface de toit de la carte), aides chiffrées (CEE, MaPrimeRénov' : barèmes à sourcer), DJU par station ; 5) passer à MapLibre 6 (6.16.0 publiée le 25/10/2026, guide de migration à lire). |

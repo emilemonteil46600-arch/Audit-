@@ -31,3 +31,18 @@ test('Nombres au format français', function () {
 test('Échappement HTML', function () {
   assert.equal(FLASH.echapper('<b>"a" & \'b\'</b>'), '&lt;b&gt;&quot;a&quot; &amp; &#39;b&#39;&lt;/b&gt;');
 });
+
+test('Mise en forme des énergies, euros et durées', function () {
+  const n = function (t) { return t.replace(/[\u00a0\u202f]/g, ' '); };
+  assert.equal(n(FLASH.energie(34945.8)), '34,9 MWh');
+  assert.equal(n(FLASH.energie(470000)), '470 MWh');
+  assert.equal(n(FLASH.energie(812)), '810 kWh');
+  assert.equal(n(FLASH.energie(1234567)), '1,2 GWh');
+  assert.equal(n(FLASH.fourchetteEnergie(34945.8, 8000)), '27 – 43 MWh');
+  assert.equal(n(FLASH.euros(4541)), '4 540 €');
+  assert.equal(n(FLASH.plageEuros(2901.25, 5222.25)), '2 900 – 5 200 €');
+  assert.equal(FLASH.ans(6.6), '6,6 ans');
+  assert.equal(FLASH.ans(null), 'jamais');
+  assert.equal(FLASH.plageAns(5.2, 9.4), '5 – 9 ans');
+  assert.equal(FLASH.pct(0.243), '24 %');
+});

@@ -373,6 +373,9 @@
     };
     h.total = h.murs + h.vitrages + h.toiture + h.plancher + h.ponts + h.air;
     h.nAir = nAir;
+    // Part de chaque paroi dans les déperditions (pour dire « la chaleur part surtout par… »)
+    h.parts = {};
+    ['murs', 'vitrages', 'toiture', 'plancher', 'ponts', 'air'].forEach(function (k) { h.parts[k] = h.total > 0 ? h[k] / h.total : 0; });
     return h;
   }
 
@@ -414,8 +417,11 @@
     });
     const s = surfaceChauffee;
     const ratios = { ef: total.ef / s, ep5: total.ep5 / s, co25: total.co25 / s };
+    // Part de chaque usage dans la consommation (énergie finale)
+    const parts = {};
+    lignes.forEach(function (u) { parts[u.id] = total.ef > 0 ? u.ef / total.ef : 0; });
     return {
-      usages: lignes, parEnergie: parEnergie, total: total, ratios: ratios,
+      usages: lignes, parEnergie: parEnergie, total: total, ratios: ratios, parts: parts,
       etiquette: famille === 'logement' ? etiquetteDpe(ratios.ep5, ratios.co25, D) : null
     };
   }

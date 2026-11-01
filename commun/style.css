@@ -734,3 +734,76 @@ a.outil:hover { border-color: var(--accent); transform: translateY(-2px); }
 .nuage-legende i.f-tertiaire { background: var(--accent); }
 .nuage-legende i.dehors { background: none; border: 2.5px solid var(--danger); }
 @media (max-width: 520px) { .vues button { padding: 6px 6px; font-size: .82rem; } }
+
+/* ---------- Vue client ---------- */
+.page-client { max-width: 980px; }
+.client-barre { display: flex; gap: 8px; flex-wrap: wrap; align-items: end; margin-bottom: 14px; }
+.client-signature { display: flex; flex-direction: column; gap: 3px; flex: 1 1 200px; font-size: .78rem; }
+.client-signature input { padding: 7px 9px; }
+.client-page { background: var(--surface); border: 1px solid var(--bord); border-radius: 16px; box-shadow: var(--ombre); padding: 28px 30px; }
+@media (max-width: 600px) { .client-page { padding: 18px 16px; } }
+.client-tete { display: flex; gap: 14px; align-items: center; flex-wrap: wrap; padding-bottom: 14px; border-bottom: 2px solid var(--accent); }
+.client-logo { flex: none; }
+.client-titre { flex: 1 1 260px; min-width: 0; }
+.client-surtitre { font-size: .76rem; font-weight: 750; text-transform: uppercase; letter-spacing: .07em; color: var(--accent); }
+.client-titre h1 { margin: 2px 0; font-size: 1.45rem; overflow-wrap: anywhere; }
+.client-titre > span { color: var(--encre-2); font-size: .9rem; }
+.client-date { font-size: .82rem; color: var(--encre-2); text-align: right; }
+.client-avert { margin: 12px 0 18px; padding: 9px 12px; border-radius: 10px; background: var(--alerte-doux); color: var(--alerte); font-size: .88rem; }
+.client-avert .ico { vertical-align: -3px; }
+.client-chiffres { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin-bottom: 22px; }
+@media (max-width: 760px) { .client-chiffres { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.client-chiffre { display: flex; flex-direction: column; gap: 2px; padding: 14px; border-radius: 14px; background: var(--surface-2); border: 1px solid var(--bord); min-width: 0; }
+.client-chiffre span { font-size: .74rem; text-transform: uppercase; letter-spacing: .05em; font-weight: 750; color: var(--encre-3); }
+.client-chiffre b { font-size: 1.35rem; font-weight: 800; letter-spacing: -.01em; font-variant-numeric: tabular-nums; }
+.client-chiffre small { font-size: .78rem; color: var(--encre-2); }
+.client-chiffre.principal { background: linear-gradient(135deg, #d4622c, #9a3512); border-color: transparent; color: #fff; }
+.client-chiffre.principal span, .client-chiffre.principal small { color: rgba(255, 255, 255, .9); }
+.client-lettre { display: inline-grid; place-items: center; width: 40px; height: 40px; border-radius: 9px; font-style: normal; font-size: 1.5rem; }
+.client-section { margin-bottom: 22px; }
+.client-section h2 { font-size: 1.15rem; margin: 0 0 10px; padding-left: 10px; border-left: 4px solid var(--accent); }
+.client-energie { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr); gap: 18px; align-items: center; }
+@media (max-width: 760px) { .client-energie { grid-template-columns: minmax(0, 1fr); } }
+.client-action { display: flex; gap: 12px; padding: 14px; border-radius: 14px; border: 1px solid var(--bord); margin-bottom: 10px; border-left: 5px solid var(--ok); }
+.client-action.c-etude { border-left-color: var(--alerte); }
+.client-action-ico { width: 42px; height: 42px; border-radius: 12px; display: grid; place-items: center; background: var(--ok-doux); color: var(--ok); flex: none; }
+.c-etude .client-action-ico { background: var(--alerte-doux); color: var(--alerte); }
+.client-action-ico .ico { width: 22px; height: 22px; }
+.client-action > div { min-width: 0; }
+.client-action h3 { margin: 0 0 4px; font-size: 1.02rem; }
+.client-badge { font-size: .72rem; font-weight: 750; padding: 2px 8px; border-radius: 999px; background: var(--ok-doux); color: var(--ok); white-space: nowrap; vertical-align: 2px; }
+.c-etude .client-badge { background: var(--alerte-doux); color: var(--alerte); }
+.client-action p { margin: 0 0 8px; color: var(--encre-2); font-size: .9rem; }
+.client-action-chiffres { list-style: none; margin: 0; padding: 0; display: flex; gap: 6px 16px; flex-wrap: wrap; font-size: .88rem; }
+.client-non { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.client-non li { display: flex; gap: 8px; align-items: flex-start; font-size: .92rem; }
+.client-non .ico { color: var(--encre-3); margin-top: 2px; }
+.client-note { font-size: .8rem; color: var(--encre-3); margin-top: 6px; }
+.client-etapes { margin: 0; padding-left: 20px; display: grid; gap: 6px; font-size: .92rem; }
+.client-pied { margin-top: 10px; padding-top: 12px; border-top: 1px solid var(--bord); font-size: .76rem; color: var(--encre-3); }
+.accueil-client { text-align: center; padding: 30px; }
+
+/* ---------- Impression : seulement la page client (A4) ---------- */
+@media print {
+  @page { size: A4; margin: 12mm; }
+  body { background: #fff; color: #111; }
+  .bandeau-flash, .entete, .pied, .client-barre, .toast { display: none !important; }
+  body:not(.mode-client) .app-carte, body:not(.mode-client) .app-panneau { display: none !important; }
+  .page-client { max-width: none; padding: 0; margin: 0; }
+  .client-page { border: 0; box-shadow: none; padding: 0; }
+  .client-page * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  /* Une section peut se couper entre deux cartes, jamais au milieu d'une carte ni juste après un titre */
+  .client-action, .client-chiffres, .client-energie, .graphe-cascade, .client-etapes li { break-inside: avoid; }
+  .client-section h2 { break-after: avoid; }
+  .client-chiffres { grid-template-columns: repeat(4, minmax(0, 1fr)); margin-bottom: 14px; }
+  .client-energie { grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr); }
+  /* Un peu plus serré qu'à l'écran pour tenir sur deux pages A4 */
+  html { font-size: 13.5px; }
+  .client-section { margin-bottom: 14px; }
+  .client-avert { margin: 8px 0 12px; }
+  .client-action { padding: 10px 12px; margin-bottom: 7px; }
+  .client-energie .graphe-anneau { grid-template-columns: 130px minmax(0, 1fr); }
+  .client-energie .graphe-anneau svg { max-width: 130px; }
+  .graphe-cascade { gap: 4px; }
+  .cascade-piste { height: 16px; }
+}

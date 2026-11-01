@@ -241,3 +241,12 @@ test('Bâtiments types : chacun se calcule, la maison est l’exemple de la Mét
   assert.ok(classement.length > 50);
   assert.ok(classement[0].cas);
 });
+
+test('Parts des usages et des parois : la somme fait 100 %', function () {
+  const r = M.diagnostiquer(entreesExemple(), {}, H, {});
+  const somme = function (o) { return Object.keys(o).reduce(function (t, k) { return t + o[k]; }, 0); };
+  assert.ok(proche(somme(r.resultat.parts), 1, 1e-9));
+  assert.ok(proche(somme(r.modele.deperditions.parts), 1, 1e-9));
+  assert.ok(proche(r.resultat.parts.chauffage, 29753.1 / 34945.809, 1e-6));
+  assert.ok(proche(r.modele.deperditions.parts.murs, 163.2 / 508.6, 1e-9));
+});
