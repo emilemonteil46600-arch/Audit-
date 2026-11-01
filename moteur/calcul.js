@@ -63,6 +63,20 @@
         écart = (calcul sans calage − factures) / factures      (> 0 : le moteur surestime)
       biais = moyenne des écarts ; « dans la fourchette » si | calcul − factures | ≤ δ.
 
+  13. Photovoltaïque en toiture (autoconsommation + vente du surplus)
+      Toit en pente : deux pans de part et d'autre du faîtage (direction lue sur le contour de la carte) ;
+        surface d'un pan = S au sol / 2 / cos(pente) ; on n'équipe que les pans qui produisent au moins 75 %
+        d'un pan plein sud. Toit plat : modules peu inclinés, orientés au mieux.
+        kWc posables = surface × part utilisable × 0,2 kWc/m²      (les meilleurs pans se remplissent d'abord)
+      Production = kWc × productible de la zone (kWh/kWc) × production relative de l'orientation
+      Consommé sur place = min(90 % de la production ; part de jour × électricité hors chauffage)
+        (logement collectif : seulement les services généraux, VMC et pompes ; les logements ont chacun leur compteur)
+      Économie = consommé sur place × prix de l'électricité + surplus × tarif de vente
+        (la vente du surplus ne suit pas la hausse du prix de l'énergie : tarif fixé par contrat)
+      Taille : on essaie 3, 6 et 9 kWc, la taille qui couvre juste la consommation de jour et le toit entier ;
+      on garde la meilleure VAN. L'électricité consommée sur place est déduite de la facture, de l'énergie
+      primaire et du CO₂ (pour l'étiquette : seulement la part qui couvre les 5 usages du DPE).
+
    Exemple refait à la main : maison de plain-pied de 1970 à Toulouse (zone H2c, DJU 1 950),
    10 m × 10 m au sol, 3 m de haut, chaudière gaz ancienne ; tout le reste « je ne sais pas ».
      S chauffée = 100 × 0,80 = 80 m² ; V = 80 × 2,5 = 200 m³
@@ -78,6 +92,11 @@
      Isolation des combles (U 1,0 → 0,14) : ΔH = 86 W/K → − 5 031 kWh de gaz → ≈ 614 €/an
      Poids du prix du gaz sur la facture : + 10 % → + 392 € sur 4 541 € → élasticité 3 925 / 4 541 ≈ 0,86
      Factures d'une année à 2 340 DJU (+ 20 %) : k gaz = facture / ((29 753 × 1,2 + 2 393) × 1,11)
+     Panneaux (faîtage est-ouest : un pan au sud, un au nord qu'on n'équipe pas) :
+       pan sud = 50 / cos 35° = 61 m² × 0,7 × 0,2 ≈ 8,5 kWc posables ; meilleure VAN pour 3 kWc
+       production = 3 × 1 280 = 3 840 kWh ; sur place = min(0,9 × 3 840 ; 0,35 × 2 800 = 980) = 980 kWh (26 %)
+       économie = 980 × 0,22 + 2 860 × 0,04 ≈ 216 + 114 = 330 €/an ; coût 3 × (1 100 à 1 800) × 1,1 × 1,2
+       = 4 356 – 7 128 € TTC → TRB ≈ 17 ans, TRA ≈ 22 ans pour 25 ans de durée de vie → 🟠 à discuter
    ========================================================== */
 (function (global) {
   'use strict';
@@ -97,7 +116,8 @@
       utilisees.add(id);
       return estModifiee(perso, id) ? perso[id] : e.valeur;
     }
-    return { H: H, index: index, modifs: perso, validees: validees || {}, utilisees: utilisees, v: v };
+    // memo : résultats déjà calculés pour un même jeu de paramètres (ex. la taille des panneaux), pour aller plus vite.
+    return { H: H, index: index, modifs: perso, validees: validees || {}, utilisees: utilisees, v: v, memo: new WeakMap() };
   }
 
   function estModifiee(modifs, id) {
@@ -298,6 +318,16 @@
       noter('occupants', 'deduite', null, 'ratio par m² pour cet usage');
     }
 
+    /* Toiture solaire (point 13) : panneaux existants, pans du toit, puissance posable */
+    const ePv = lire('photovoltaique'), eFait = lire('orientationFaitage');
+    const photovoltaique = ePv ? ePv.valeur : 'aucun';
+    noter('photovoltaique', ePv ? ePv.origine : 'deduite', photovoltaique, ePv ? '' : 'pas de panneaux supposé');
+    const faitage = eFait && isFinite(Number(eFait.valeur)) ? Number(eFait.valeur) : null;
+    const toitSolaire = toitureSolaire(toitureType, surfaceSol, faitage, D);
+    noter('toitureSolaire', faitage !== null ? eFait.origine : 'deduite', null,
+      toitureType === 'terrasse' ? 'toit plat : modules orientés au mieux' :
+        faitage !== null ? 'faîtage lu sur le contour du bâtiment' : 'orientation du toit inconnue');
+
     const params = {
       usage: usage, famille: famille, periode: periode, zone: zone,
       surfacePlancher: surfacePlancher, surfaceSol: surfaceSol, niveaux: niveaux, hauteur: hauteur,
@@ -322,7 +352,12 @@
       besoinFroid: D.v('froid.' + zone.slice(0, 2)), seer: D.v('froid.seer'),
       eclairage: D.v('usage.' + usage + '.eclairage'), autres: D.v('usage.' + usage + '.autres'),
       auxVentilation: D.v('aux.' + ventilation), auxHydraulique: D.v('aux.hydraulique'),
-      facteurComportement: 1
+      facteurComportement: 1,
+      photovoltaique: photovoltaique, pvToiture: toitSolaire, pvMax: toitSolaire.kwcMax, pvKwc: 0,
+      pvServicesGeneraux: usage === 'logement-collectif',
+      pvProductible: D.v('pv.productible.' + zone),
+      pvPartJour: D.v(logement ? 'pv.partJour.logement' : 'pv.partJour.tertiaire'),
+      pvTauxMax: D.v('pv.tauxMax'), tarifSurplus: D.v('pv.tarifSurplus')
     };
     return { params: params, origines: origines, manque: [] };
   }
@@ -399,10 +434,12 @@
     return { energie: c.energie, rendement: D.v('ecs.' + p.ecs + '.rendement') };
   }
 
-  // Coûts, énergie primaire et CO₂ d'une liste d'usages { id, energie, ef }.
-  function bilan(usages, surfaceChauffee, famille, D) {
+  // Coûts, énergie primaire et CO₂ d'une liste d'usages { id, energie, ef } ;
+  // revenu = vente du surplus photovoltaïque (€/an), déduite du coût. La ligne « pv » a un ef négatif.
+  function bilan(usages, surfaceChauffee, famille, D, revenu) {
     const parEnergie = {};
-    const total = { ef: 0, ep: 0, co2: 0, cout: 0, ep5: 0, co25: 0 };
+    const total = { ef: 0, ep: 0, co2: 0, cout: 0, ep5: 0, co25: 0, revenu: revenu || 0 };
+    let brut = 0;
     const lignes = usages.map(function (u) {
       const ep = u.ef * D.v('energie.' + u.energie + '.ep');
       const co2 = u.ef * D.v(u.energie === 'electricite' ? 'energie.electricite.co2.' + u.id : 'energie.' + u.energie + '.co2');
@@ -412,14 +449,18 @@
       const e = parEnergie[u.energie] || (parEnergie[u.energie] = { ef: 0, facture: 0, cout: 0, ep: 0, co2: 0 });
       e.ef += u.ef; e.facture += facture; e.cout += cout; e.ep += ep; e.co2 += co2;
       total.ef += u.ef; total.ep += ep; total.co2 += co2; total.cout += cout;
-      if (u.id !== 'autres') { total.ep5 += ep; total.co25 += co2; }
+      // Les 5 usages du DPE : tout sauf « autres » ; pour le photovoltaïque, la part qui les couvre.
+      const part5 = u.id === 'autres' ? 0 : u.part5 === undefined ? 1 : u.part5;
+      total.ep5 += ep * part5; total.co25 += co2 * part5;
+      if (u.ef > 0) brut += u.ef;
       return Object.assign({}, u, { ep: ep, co2: co2, facture: facture, cout: cout });
     });
+    total.cout -= total.revenu;
     const s = surfaceChauffee;
     const ratios = { ef: total.ef / s, ep5: total.ep5 / s, co25: total.co25 / s };
-    // Part de chaque usage dans la consommation (énergie finale)
+    // Part de chaque usage dans la consommation (énergie finale, hors production photovoltaïque)
     const parts = {};
-    lignes.forEach(function (u) { parts[u.id] = total.ef > 0 ? u.ef / total.ef : 0; });
+    lignes.forEach(function (u) { if (u.ef >= 0) parts[u.id] = brut > 0 ? u.ef / brut : 0; });
     return {
       usages: lignes, parEnergie: parEnergie, total: total, ratios: ratios, parts: parts,
       etiquette: famille === 'logement' ? etiquetteDpe(ratios.ep5, ratios.co25, D) : null
@@ -437,6 +478,105 @@
     return { energie: energie, climat: climat, classe: energie > climat ? energie : climat };
   }
 
+  /* ---------- 3 bis. Photovoltaïque (point 13 en haut du fichier) ---------- */
+
+  // Écart (0 à 180°) entre l'azimut d'un pan (0 = nord, 90 = est, 180 = sud, 270 = ouest) et le plein sud.
+  function ecartAuSud(azimut) {
+    const d = (((azimut - 180) % 360) + 360) % 360;
+    return d > 180 ? 360 - d : d;
+  }
+
+  // Production relative d'un pan selon son écart au sud, entre les valeurs données tous les 45°.
+  function facteurOrientation(ecart, D) {
+    const e = Math.max(0, Math.min(180, ecart));
+    const bas = Math.min(135, Math.floor(e / 45) * 45);
+    const fBas = D.v('pv.facteur.' + bas), fHaut = D.v('pv.facteur.' + (bas + 45));
+    return fBas + (fHaut - fBas) * (e - bas) / 45;
+  }
+
+  const DIRECTIONS = ['nord', 'nord-est', 'est', 'sud-est', 'sud', 'sud-ouest', 'ouest', 'nord-ouest'];
+  function nomOrientation(azimut) {
+    return DIRECTIONS[Math.round((((azimut % 360) + 360) % 360) / 45) % 8];
+  }
+
+  // Les pans du toit (les meilleurs d'abord) et la puissance qu'on peut y poser.
+  // faitage : direction du faîtage en degrés (0 = nord-sud, 90 = est-ouest), null si inconnue.
+  function toitureSolaire(toitureType, surfaceSol, faitage, D) {
+    const densite = D.v('pv.densite');
+    const pan = function (nom, azimut, facteur, surface, part, equipe) {
+      return { nom: nom, azimut: azimut, facteur: facteur, surface: surface, modules: surface * part,
+        kwc: surface * part * densite, equipe: equipe };
+    };
+    let pans;
+    if (toitureType === 'terrasse') {
+      pans = [pan('toit plat', null, D.v('pv.facteur.terrasse'), surfaceSol, D.v('pv.part.terrasse'), true)];
+    } else {
+      const surface = surfaceSol / 2 / Math.cos(D.v('pv.pente') * Math.PI / 180);
+      const part = D.v('pv.part.pan');
+      if (faitage === null) {
+        pans = [pan('orientation inconnue', null, D.v('pv.facteur.inconnu'), surface, part, true)];
+      } else {
+        const seuil = D.v('pv.seuilPan');
+        pans = [faitage + 90, faitage + 270].map(function (a) {
+          const azimut = ((a % 360) + 360) % 360, facteur = facteurOrientation(ecartAuSud(azimut), D);
+          return pan(nomOrientation(azimut), azimut, facteur, surface, part, facteur >= seuil);
+        });
+      }
+    }
+    pans.sort(function (a, b) { return b.facteur - a.facteur; });
+    return { pans: pans, kwcMax: pans.reduce(function (s, x) { return s + (x.equipe ? x.kwc : 0); }, 0) };
+  }
+
+  // Production relative moyenne de kwc posés : les meilleurs pans se remplissent d'abord.
+  function facteurPose(toit, kwc) {
+    let reste = kwc, somme = 0, pose = 0;
+    toit.pans.forEach(function (x) {
+      if (!x.equipe || reste <= 0) return;
+      const k = Math.min(reste, x.kwc);
+      somme += k * x.facteur; pose += k; reste -= k;
+    });
+    return pose > 0 ? somme / pose : 0;
+  }
+
+  // L'installation prévue (null s'il n'y en a pas) : puissance et production de l'année.
+  function installationPV(p) {
+    if (!(p.pvKwc > 0)) return null;
+    const facteur = facteurPose(p.pvToiture, p.pvKwc);
+    return { kwc: p.pvKwc, facteur: facteur, productible: p.pvProductible, production: p.pvKwc * p.pvProductible * facteur,
+      partJour: p.pvPartJour, tauxMax: p.pvTauxMax, tarif: p.tarifSurplus, servicesGeneraux: p.pvServicesGeneraux };
+  }
+
+  // L'électricité que des panneaux peuvent couvrir : hors chauffage (l'hiver, peu de soleil), dont les 5 usages du DPE.
+  // En logement collectif, seulement les services généraux (VMC, pompes) : l'électricité des logements est
+  // payée par chaque occupant (H : une opération d'autoconsommation collective changerait cela).
+  function electriciteHorsChauffage(usages, servicesGeneraux) {
+    const e = { total: 0, cinqUsages: 0 };
+    usages.forEach(function (u) {
+      if (u.energie !== 'electricite' || u.id === 'chauffage' || u.id === 'pv') return;
+      if (servicesGeneraux && u.id !== 'auxiliaires') return;
+      e.total += u.ef;
+      if (u.id !== 'autres') e.cinqUsages += u.ef;
+    });
+    return e;
+  }
+
+  // Partage de la production entre ce qui est consommé sur place et ce qui part sur le réseau.
+  function partagerPV(installation, usages) {
+    const e = electriciteHorsChauffage(usages, installation.servicesGeneraux);
+    const autoconsommation = Math.min(installation.production * installation.tauxMax, installation.partJour * e.total);
+    const surplus = installation.production - autoconsommation;
+    return Object.assign({}, installation, {
+      horsChauffage: e.total, autoconsommation: autoconsommation, surplus: surplus, revenu: surplus * installation.tarif,
+      taux: installation.production > 0 ? autoconsommation / installation.production : 0,
+      part5: e.total > 0 ? e.cinqUsages / e.total : 0
+    });
+  }
+
+  // La ligne « photovoltaïque » du bilan : de l'électricité qu'on n'achète plus.
+  function lignePV(pv) {
+    return { id: 'pv', energie: 'electricite', ef: -pv.autoconsommation, part5: pv.part5 };
+  }
+
   // Le calcul complet pour des paramètres chiffrés.
   function calculer(p, D) {
     const g = geometrie(p);
@@ -452,13 +592,18 @@
       { id: 'auxiliaires', energie: 'electricite', ef: (p.auxVentilation + (p.hydraulique ? p.auxHydraulique : 0)) * g.surfaceChauffee },
       { id: 'autres', energie: 'electricite', ef: p.autres * g.surfaceChauffee }
     ];
-    const b = bilan(usages, g.surfaceChauffee, p.famille, D);
+    // Panneaux photovoltaïques : ce qui est consommé sur place n'est plus acheté (point 13).
+    const installation = installationPV(p);
+    const pv = installation ? partagerPV(installation, usages) : null;
+    if (pv) usages.push(lignePV(pv));
+    const b = bilan(usages, g.surfaceChauffee, p.famille, D, pv ? pv.revenu : 0);
     return Object.assign(b, {
       geometrie: g,
       deperditions: h,
       besoinChauffage: besoin,
       hParM2: h.total / g.surfaceChauffee,
-      puissance: h.total * (p.ti - p.tbase) / 1000
+      puissance: h.total * (p.ti - p.tbase) / 1000,
+      pv: pv
     });
   }
 
@@ -544,18 +689,24 @@
     return k;
   }
 
+  // La production photovoltaïque n'est pas calée ; sa part consommée sur place est refaite sur les usages calés.
   function appliquerCalage(resultat, kUsages, famille, D) {
     if (!kUsages) return resultat;
-    const usages = resultat.usages.map(function (u) {
+    const usages = resultat.usages.filter(function (u) { return u.id !== 'pv'; }).map(function (u) {
       return { id: u.id, energie: u.energie, besoin: u.besoin, ef: u.ef * (kUsages[u.id] || 1) };
     });
-    return Object.assign({}, resultat, bilan(usages, resultat.geometrie.surfaceChauffee, famille, D));
+    const pv = resultat.pv ? partagerPV(resultat.pv, usages) : null;
+    if (pv) usages.push(lignePV(pv));
+    return Object.assign({}, resultat, bilan(usages, resultat.geometrie.surfaceChauffee, famille, D, pv ? pv.revenu : 0), { pv: pv });
   }
 
   /* ---------- 6. Rentabilité ---------- */
 
-  function fluxActualise(economie, t, inflation, actualisation) {
-    return economie * Math.pow(1 + inflation, t - 1) / Math.pow(1 + actualisation, t);
+  // fixe : la part de l'économie qui ne suit pas la hausse du prix de l'énergie
+  // (la vente du surplus photovoltaïque, à un tarif fixé par contrat). 0 pour les autres actions.
+  function fluxActualise(economie, t, inflation, actualisation, fixe) {
+    const f = fixe || 0;
+    return ((economie - f) * Math.pow(1 + inflation, t - 1) + f) / Math.pow(1 + actualisation, t);
   }
 
   function tempsRetourBrut(cout, economie) {
@@ -563,27 +714,27 @@
   }
 
   // Interpolation linéaire dans l'année où le cumul dépasse le coût. null = jamais (dans l'horizon).
-  function tempsRetourActualise(cout, economie, inflation, actualisation, horizon) {
+  function tempsRetourActualise(cout, economie, inflation, actualisation, horizon, fixe) {
     if (!(economie > 0)) return null;
     let cumul = 0;
     for (let t = 1; t <= horizon; t++) {
-      const flux = fluxActualise(economie, t, inflation, actualisation);
+      const flux = fluxActualise(economie, t, inflation, actualisation, fixe);
       if (cumul + flux >= cout) return t - 1 + (cout - cumul) / flux;
       cumul += flux;
     }
     return null;
   }
 
-  function van(cout, economie, inflation, actualisation, duree) {
+  function van(cout, economie, inflation, actualisation, duree, fixe) {
     let cumul = 0;
-    for (let t = 1; t <= duree; t++) cumul += fluxActualise(economie, t, inflation, actualisation);
+    for (let t = 1; t <= duree; t++) cumul += fluxActualise(economie, t, inflation, actualisation, fixe);
     return cumul - cout;
   }
 
   // Cumul actualisé année par année (pour la courbe de trésorerie), en partant de − coût.
-  function tresorerie(cout, economie, inflation, actualisation, duree) {
+  function tresorerie(cout, economie, inflation, actualisation, duree, fixe) {
     const points = [-cout];
-    for (let t = 1; t <= duree; t++) points.push(points[t - 1] + fluxActualise(economie, t, inflation, actualisation));
+    for (let t = 1; t <= duree; t++) points.push(points[t - 1] + fluxActualise(economie, t, inflation, actualisation, fixe));
     return points;
   }
 
@@ -596,7 +747,8 @@
 
   /* ---------- 7. Les actions possibles ----------
      etat(p) : { etat: 'ok' | 'deja' | 'sansObjet', raison }
-     appliquer(p) : les paramètres après travaux ; quantite(p, r) : ce qu'on chiffre. */
+     appliquer(p) : les paramètres après travaux ; quantite(p, r) : ce qu'on chiffre ;
+     details(p) (facultatif) : ce qu'on veut montrer en plus (ex. les tailles de panneaux essayées). */
 
   const ok = { etat: 'ok', raison: '' };
   const deja = function (raison) { return { etat: 'deja', raison: raison }; };
@@ -732,24 +884,65 @@
       etat: function (p) { return p.famille === 'logement' ? sansObjet('Logement : à la charge des occupants') : ok; },
       appliquer: function (p, D) { return avec(p, { eclairage: p.eclairage * (1 - D.v('action.led.gain')) }); },
       quantite: function (p, r) { return { valeur: r.geometrie.surfaceChauffee, unite: 'm²' }; },
-      note: 'Avec détection de présence et gradation. Sans objet si l’éclairage est déjà en LED.' }
+      note: 'Avec détection de présence et gradation. Sans objet si l’éclairage est déjà en LED.' },
+    { id: 'pv', famille: 'production', nom: 'Panneaux photovoltaïques', icone: 'soleil', cout: 'cout.pv', duree: 'duree.pv',
+      tva: 'eco.tva.pv',
+      etat: function (p, D) {
+        if (p.photovoltaique === 'existant') return deja('Déjà des panneaux photovoltaïques');
+        return p.pvMax >= D.v('pv.tailleMin') ? ok : sansObjet('Toit trop petit ou mal orienté pour une installation utile');
+      },
+      appliquer: function (p, D) { return avec(p, { pvKwc: dimensionnerPV(p, D).kwc }); },
+      quantite: function (p, r, D) { return { valeur: dimensionnerPV(p, D).kwc, unite: 'kWc' }; },
+      details: function (p, D) { return dimensionnerPV(p, D); },
+      note: 'Autoconsommation avec vente du surplus. À confirmer avec PVGIS et en visite : ombres, charpente, état de la couverture.' }
   ];
 
-  // Ordre de calcul d'un bouquet : l'enveloppe d'abord, puis la ventilation, la régulation et les systèmes.
-  const ORDRE_FAMILLES = ['toiture', 'murs', 'plancher', 'menuiseries', 'ventilation', 'regulation', 'chauffage', 'ecs', 'eclairage'];
+  // Ordre de calcul d'un bouquet : l'enveloppe d'abord, puis la ventilation, la régulation, les systèmes
+  // et enfin la production (les panneaux sont dimensionnés sur le bâtiment déjà amélioré).
+  const ORDRE_FAMILLES = ['toiture', 'murs', 'plancher', 'menuiseries', 'ventilation', 'regulation', 'chauffage', 'ecs', 'eclairage',
+    'production'];
 
   function cleCout(def, p) {
     return typeof def.cout === 'function' ? def.cout(p) : def.cout;
   }
 
   // Coût TTC (bas, haut) : quantité × ratio HT × (1 + frais) × (1 + TVA).
+  function chiffrerQuantite(cle, valeur, tva, D) {
+    const coef = (1 + D.v('eco.frais')) * (1 + tva);
+    const bas = valeur * D.v(cle + '.bas') * coef, haut = valeur * D.v(cle + '.haut') * coef;
+    return { bas: bas, haut: haut, moyen: (bas + haut) / 2 };
+  }
+
   function chiffrer(def, p, r, D) {
     const q = def.quantite(p, r, D);
-    const cle = cleCout(def, p);
-    const tva = D.v(p.famille === 'logement' ? 'eco.tva.logement' : 'eco.tva.tertiaire');
-    const coef = (1 + D.v('eco.frais')) * (1 + tva);
-    const bas = q.valeur * D.v(cle + '.bas') * coef, haut = q.valeur * D.v(cle + '.haut') * coef;
-    return { quantite: q, bas: bas, haut: haut, moyen: (bas + haut) / 2, tva: tva };
+    const tva = D.v(def.tva || (p.famille === 'logement' ? 'eco.tva.logement' : 'eco.tva.tertiaire'));
+    return Object.assign({ quantite: q, tva: tva }, chiffrerQuantite(cleCout(def, p), q.valeur, tva, D));
+  }
+
+  // Taille des panneaux (point 13) : 3, 6 et 9 kWc, la taille qui couvre juste la consommation de jour,
+  // le toit entier ; on garde la meilleure VAN. Sur le modèle sans calage (H : la taille en dépend peu).
+  function dimensionnerPV(p, D) {
+    if (D.memo && D.memo.has(p)) return D.memo.get(p);
+    const base = calculer(p, D);
+    const min = D.v('pv.tailleMin');
+    const meilleur = p.pvToiture.pans.find(function (x) { return x.equipe; });
+    const parKwc = meilleur ? p.pvProductible * meilleur.facteur : 0;
+    const jour = p.pvPartJour * electriciteHorsChauffage(base.usages, p.pvServicesGeneraux).total;
+    const kwcJour = parKwc > 0 ? jour / (p.pvTauxMax * parKwc) : 0;
+    const essais = [min, D.v('pv.taille.moyenne'), D.v('pv.taille.grande'), kwcJour, p.pvMax].filter(function (t, n, liste) {
+      return t >= min && t <= p.pvMax && liste.slice(0, n).every(function (u) { return Math.abs(u - t) > 0.05; });
+    });
+    const i = D.v('eco.inflation'), a = D.v('eco.actualisation'), duree = D.v('duree.pv'), tva = D.v('eco.tva.pv');
+    const candidats = essais.map(function (kwc) {
+      const r = calculer(avec(p, { pvKwc: kwc }), D);
+      const economie = base.total.cout - r.total.cout;
+      const cout = chiffrerQuantite('cout.pv', kwc, tva, D).moyen;
+      return { kwc: kwc, economie: economie, cout: cout, van: van(cout, economie, i, a, duree, r.total.revenu) };
+    });
+    const choix = candidats.reduce(function (m, c) { return !m || c.van > m.van ? c : m; }, null);
+    const resultat = { kwc: choix ? choix.kwc : 0, candidats: candidats };
+    if (D.memo) D.memo.set(p, resultat);
+    return resultat;
   }
 
   // Une action seule, sur le bâtiment de départ (calé sur les factures si tu en as donné).
@@ -759,9 +952,10 @@
     const apres = calculer(def.appliquer(p, D), D);
     const avantCal = appliquerCalage(base, kUsages, p.famille, D), apresCal = appliquerCalage(apres, kUsages, p.famille, D);
     const economie = avantCal.total.cout - apresCal.total.cout;
+    const revente = apresCal.total.revenu - avantCal.total.revenu; // ne suit pas la hausse des prix
     const cout = chiffrer(def, p, base, D);
     const i = D.v('eco.inflation'), a = D.v('eco.actualisation'), duree = D.v(def.duree);
-    const tra = tempsRetourActualise(cout.moyen, economie, i, a, D.v('eco.horizon'));
+    const tra = tempsRetourActualise(cout.moyen, economie, i, a, D.v('eco.horizon'), revente);
     const ecoBas = economie * (1 - rel), ecoHaut = economie * (1 + rel);
     return {
       id: def.id, def: def, etat: etat,
@@ -770,14 +964,17 @@
       gainCo2: avantCal.total.co2 - apresCal.total.co2,
       gainEp5: avantCal.total.ep5 - apresCal.total.ep5,
       economie: economie, economieBas: ecoBas, economieHaut: ecoHaut,
+      revente: revente, economieFacture: economie - revente, // facture en moins / vente du surplus photovoltaïque
       cout: cout, duree: duree,
       trb: tempsRetourBrut(cout.moyen, economie),
       trbBas: ecoHaut > 0 ? cout.bas / ecoHaut : null,
       trbHaut: ecoBas > 0 ? cout.haut / ecoBas : null,
       tra: tra,
-      van: van(cout.moyen, economie, i, a, duree),
-      tresorerie: tresorerie(cout.moyen, economie, i, a, duree),
-      verdict: verdict(tra, duree, D.v('eco.seuil.afaire'))
+      van: van(cout.moyen, economie, i, a, duree, revente),
+      tresorerie: tresorerie(cout.moyen, economie, i, a, duree, revente),
+      verdict: verdict(tra, duree, D.v('eco.seuil.afaire')),
+      pv: apresCal.pv || null,
+      details: def.details ? def.details(p, D) : null
     };
   }
 
@@ -811,15 +1008,16 @@
     const cout = etapes.reduce(function (s, e) { return { bas: s.bas + e.cout.bas, haut: s.haut + e.cout.haut }; }, { bas: 0, haut: 0 });
     cout.moyen = (cout.bas + cout.haut) / 2;
     const economie = baseCal.total.cout - finCal.total.cout;
+    const revente = finCal.total.revenu - baseCal.total.revenu;
     const i = D.v('eco.inflation'), a = D.v('eco.actualisation');
     return {
       etapes: etapes, ids: etapes.map(function (e) { return e.id; }),
       avant: baseCal, apres: finCal, params: p,
       gainPart: (baseCal.total.ef - finCal.total.ef) / baseCal.total.ef,
-      economie: economie, economieBas: economie * (1 - rel), economieHaut: economie * (1 + rel),
+      economie: economie, economieBas: economie * (1 - rel), economieHaut: economie * (1 + rel), revente: revente,
       cout: cout,
       trb: tempsRetourBrut(cout.moyen, economie),
-      tra: tempsRetourActualise(cout.moyen, economie, i, a, D.v('eco.horizon')),
+      tra: tempsRetourActualise(cout.moyen, economie, i, a, D.v('eco.horizon'), revente),
       gainCo2: baseCal.total.co2 - finCal.total.co2,
       puissanceApres: r.puissance
     };
@@ -971,9 +1169,11 @@
     creerDonnees, valeursExemple, periodeDepuisAnnee, rangPeriode, zoneDepuisDepartement, chauffageDepuisEnergie,
     completer, uTerrePlein, uPlancherEffectif, geometrie, deperditions, besoinChauffage, besoinEcs, systemeEcs,
     bilan, etiquetteDpe, calculer, FACTEURS, incertitude, niveauFiabilite,
+    ecartAuSud, facteurOrientation, nomOrientation, toitureSolaire, facteurPose, installationPV, electriciteHorsChauffage,
+    partagerPV, dimensionnerPV,
     coefficientsCalage, facturesSansModele, calageParUsage, appliquerCalage,
     fluxActualise, tempsRetourBrut, tempsRetourActualise, van, tresorerie, verdict,
-    ACTIONS, ORDRE_FAMILLES, chiffrer, evaluerAction, choisirParFamille, evaluerBouquet, diagnostiquer,
+    ACTIONS, ORDRE_FAMILLES, chiffrerQuantite, chiffrer, evaluerAction, choisirParFamille, evaluerBouquet, diagnostiquer,
     elasticite, influences, influencesSurCas, evaluerCas, statistiquesCas
   };
 

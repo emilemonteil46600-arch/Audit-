@@ -38,6 +38,18 @@
 
    5) Verdict d'un service (test de faisabilité) : ❌ s'il ne répond pas à une
       page web, 🟠 s'il répond mais lentement ou sans donnée utile ici, ✅ sinon.
+
+   6) Direction du faîtage (pour les panneaux photovoltaïques) : on suppose le faîtage
+      parallèle aux grands côtés du contour (H). Chaque côté, de longueur Lᵢ et d'azimut θᵢ
+      (0° = nord, 90° = est), « vote » avec l'angle doublé (un côté et son opposé votent pareil) :
+
+        X = Σ Lᵢ cos 2θᵢ        Y = Σ Lᵢ sin 2θᵢ        faîtage = ½ atan2(Y, X), ramené entre 0 et 180°
+        allongement = √(X² + Y²) / Σ Lᵢ      (0 pour un carré, (a − b) / (a + b) pour un rectangle a × b)
+
+      En dessous de 0,1 (bâtiment presque carré, en L…), le faîtage est inconnu.
+      Exemple : rectangle de 20 m (est-ouest) × 12 m (nord-sud)
+        X = 2 × 20 × cos 180° + 2 × 12 × cos 0° = − 40 + 24 = − 16 ; Y = 0
+        faîtage = ½ × 180° = 90° (est-ouest : un pan au sud, un au nord) ; allongement = 16 / 64 = 0,25
    ========================================================== */
 (function (global) {
   'use strict';
@@ -131,6 +143,28 @@
       return { debut: p, fin: s[(i + 1) % s.length], longueur: longueur, mitoyen: estMitoyen };
     });
     return { perimetre: perimetre, mitoyen: mitoyen, expose: perimetre - mitoyen, part: perimetre > 0 ? mitoyen / perimetre : 0, cotes: cotes };
+  }
+
+  // Direction du faîtage en degrés (0 = nord-sud, 90 = est-ouest) : voir le point 6 en haut du fichier.
+  // null si le bâtiment n'est pas assez allongé pour le dire.
+  function orientationFaitage(anneau, rayonTerre, allongementMin) {
+    const s = sommetsOuverts(anneau);
+    if (s.length < 3) return null;
+    const origine = centre(s);
+    let x = 0, y = 0, total = 0;
+    s.forEach(function (p, i) {
+      const a = versMetres(p, origine, rayonTerre), b = versMetres(s[(i + 1) % s.length], origine, rayonTerre);
+      const longueur = Math.hypot(b[0] - a[0], b[1] - a[1]);
+      if (!longueur) return;
+      const azimut = Math.atan2(b[0] - a[0], b[1] - a[1]);
+      x += longueur * Math.cos(2 * azimut);
+      y += longueur * Math.sin(2 * azimut);
+      total += longueur;
+    });
+    const allongement = total > 0 ? Math.hypot(x, y) / total : 0;
+    if (allongement < allongementMin) return null;
+    const angle = Math.atan2(y, x) / 2 * 180 / Math.PI;
+    return { angle: (angle + 180) % 180, allongement: allongement };
   }
 
   // Emprise d'un contour : [[ouest, sud], [est, nord]] (pour cadrer la carte sur le bâtiment).
@@ -484,7 +518,7 @@
 
   const CarteCalcul = {
     enRadians, sommetsOuverts, centre, emprise, versMetres, surfaceSolM2, distanceM, perimetreM, distancePointSegment, mitoyennete,
-    pointDansPolygone, bboxAutour, lonLatVersTuile, remettreLonLat, contourExterieur, choisirBatiment, lireCoordonnees,
+    orientationFaitage, pointDansPolygone, bboxAutour, lonLatVersTuile, remettreLonLat, contourExterieur, choisirBatiment, lireCoordonnees,
     niveauxDepuisHauteur, estimerSurface, premier, anneeDepuis, decoderMateriaux, typeToitureDepuisMateriaux,
     usageDepuisBdTopo, lireBatimentBdTopo, energieDepuisTexte, lireBdnb, lireDpe, departementDepuisCodePostal,
     lireAdresse, lirePhotos, champsUtiles, verdict, URLS, MATERIAUX_MURS, MATERIAUX_TOIT

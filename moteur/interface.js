@@ -57,8 +57,9 @@
   const energie = F.energie, fourchette = F.fourchette, fourchetteEnergie = F.fourchetteEnergie, euros = F.euros;
   const ans = F.ans, plageAns = F.plageAns, pct = F.pct, plageEuros = F.plageEuros;
 
-  const NOMS_USAGES = { chauffage: 'Chauffage', ecs: 'Eau chaude', froid: 'Climatisation', eclairage: 'Éclairage', auxiliaires: 'Auxiliaires', autres: 'Autres usages' };
-  const ICONES_USAGES = { chauffage: 'flamme', ecs: 'goutte', froid: 'flocon', eclairage: 'ampoule', auxiliaires: 'ventilation', autres: 'prise' };
+  const NOMS_USAGES = { chauffage: 'Chauffage', ecs: 'Eau chaude', froid: 'Climatisation', eclairage: 'Éclairage', auxiliaires: 'Auxiliaires', autres: 'Autres usages',
+    pv: 'Panneaux (consommé sur place)' };
+  const ICONES_USAGES = { chauffage: 'flamme', ecs: 'goutte', froid: 'flocon', eclairage: 'ampoule', auxiliaires: 'ventilation', autres: 'prise', pv: 'soleil' };
   const NOMS_PAROIS = { murs: 'Murs', vitrages: 'Fenêtres', toiture: 'Toiture', plancher: 'Plancher bas', ponts: 'Ponts thermiques', air: 'Renouvellement d’air' };
   const ICONES_PAROIS = { murs: 'mur', vitrages: 'fenetre', toiture: 'toit', plancher: 'plancher', ponts: 'calque', air: 'ventilation' };
   const VERDICTS = {
@@ -66,6 +67,18 @@
   };
   const RANG_VERDICT = { afaire: 0, discuter: 1, non: 2 };
   const NOMS_SOURCES = { adresse: 'Adresses', fond: 'Fond IGN', bdtopo: 'BD TOPO', bdnb: 'BDNB', dpe: 'DPE ADEME', photos: 'Photos' };
+
+  // Panneaux photovoltaïques : mise en forme seulement (le calcul est dans moteur/calcul.js, point 13).
+  function kwc(v) { return nb(v, v < 10 && Math.abs(v - Math.round(v)) >= 0.05 ? 1 : 0) + ' kWc'; }
+  function kwh3(v) { return nb(sig(v, 3)) + ' kWh'; } // détail du calcul : 3 chiffres significatifs
+  function texteToit(p) {
+    const pans = p.pvToiture.pans, retenus = pans.filter(function (x) { return x.equipe; });
+    const ecartes = pans.filter(function (x) { return !x.equipe; });
+    if (p.toitureType === 'terrasse') return 'toit plat, modules orientés au mieux (' + pct(pans[0].facteur) + ' d’un pan plein sud)';
+    if (pans[0].azimut === null) return 'orientation inconnue : ' + pct(pans[0].facteur) + ' d’un pan plein sud supposé';
+    return retenus.map(function (x) { return 'pan ' + x.nom + ' (' + pct(x.facteur) + ')'; }).join(' et ') +
+      (ecartes.length ? ' ; pan ' + ecartes.map(function (x) { return x.nom; }).join(', ') + ' écarté' : '');
+  }
 
   function nomEnergie(id) { return (H.ENERGIES.find(function (e) { return e.id === id; }) || {}).nom || id; }
   function nomUsageBat(id) { return (H.USAGES.find(function (u) { return u.id === id; }) || {}).nom || id; }
@@ -140,6 +153,8 @@
         nb(sig(p.perimetreExpose, 3)) + ' m de façade exposée');
       v += vignette('sablier', 'Époque', esc(nomPeriode(p.periode)), o.periode.origine, e.annee ? 'construit en ' + e.annee.valeur : o.periode.detail);
       v += vignette('flocon', 'Climat', 'zone ' + esc(p.zone), o.climat.origine, 'DJU ' + nb(p.dju) + ' · T base ' + nb(p.tbase) + ' °C');
+      v += vignette('soleil', 'Toiture solaire', '≈ ' + kwc(p.pvMax), o.toitureSolaire.origine,
+        'posables · ' + (p.photovoltaique === 'existant' ? 'panneaux déjà installés' : texteToit(p)));
       v += vignette('bureau', 'Usage', esc(nomUsageBat(p.usage)), o.usage.origine, o.usage.detail);
     }
     const lu = b.bdtopo || {}, bd = comp.bdnb;
@@ -204,6 +219,7 @@
     { groupe: 'Les équipements', cle: 'ventilation', titre: 'Ventilation', icone: 'ventilation', choix: H.CHOIX.ventilation },
     { groupe: 'Les équipements', cle: 'regulation', titre: 'Régulation', icone: 'thermostat', choix: H.CHOIX.regulation },
     { groupe: 'Les équipements', cle: 'climatisation', titre: 'Climatisation', icone: 'flocon', choix: H.CHOIX.climatisation },
+    { groupe: 'Les équipements', cle: 'photovoltaique', titre: 'Panneaux photovoltaïques', icone: 'soleil', choix: H.CHOIX.photovoltaique },
     { groupe: 'L’occupation', cle: 'occupants', titre: 'Occupants (logement)', icone: 'maison', type: 'nombre', origine: 'occupants' }
   ];
 
@@ -250,6 +266,7 @@
       case 'ventilation': return 'n ≈ ' + nb(m.deperditions.nAir, 2) + ' vol/h, infiltrations comprises';
       case 'regulation': return 'effet ' + (p.facteurRegulation >= 1 ? '+ ' : '− ') + nb(Math.abs(p.facteurRegulation - 1) * 100) + ' % sur le chauffage';
       case 'occupants': return p.occupants ? nb(p.occupants, 1) + ' personne(s)' : 'ratio par m² (tertiaire)';
+      case 'photovoltaique': return p.photovoltaique === 'existant' ? 'pas de panneaux en plus' : 'toit : ≈ ' + kwc(p.pvMax) + ' posables';
       case 'annee': return nomPeriode(p.periode);
       default: return '';
     }
@@ -434,10 +451,22 @@
     return 'Quantité : ' + nb(sig(q.valeur, 3)) + ' ' + q.unite + '\n' +
       'Coût : ' + nb(sig(q.valeur, 3)) + ' × ' + nb(d.v(cle + '.bas')) + ' à ' + nb(d.v(cle + '.haut')) + ' € HT × (1 + ' + pct(d.v('eco.frais')) + ' frais) × (1 + ' +
       nb(a.cout.tva * 100, 1) + ' % TVA) = ' + euros(a.cout.bas) + ' à ' + euros(a.cout.haut) + ' TTC\n' +
-      'Économie : ' + energie(a.gainEf) + '/an d’énergie finale → ' + euros(a.economie) + '/an (année 1)\n' +
+      (a.pv ? detailPV(a) : 'Économie : ' + energie(a.gainEf) + '/an d’énergie finale → ' + euros(a.economie) + '/an (année 1)\n') +
       'Retour brut = ' + euros(a.cout.moyen) + ' / ' + euros(a.economie) + ' = ' + ans(a.trb) + '\n' +
       'Retour actualisé (prix de l’énergie + ' + pct(d.v('eco.inflation')) + '/an, actualisation ' + pct(d.v('eco.actualisation')) + ') = ' + ans(a.tra) + '\n' +
       'VAN sur ' + a.duree + ' ans = ' + euros(a.van);
+  }
+
+  function detailPV(a) {
+    const pv = a.pv, p = r.params;
+    const essais = a.details ? a.details.candidats.map(function (c) { return kwc(c.kwc); }).join(', ') : kwc(pv.kwc);
+    return 'Toit : ' + texteToit(p) + ' → ' + kwc(p.pvMax) + ' posables ; essayé : ' + essais + ' → ' + kwc(pv.kwc) + ' (meilleure VAN)\n' +
+      'Production : ' + kwc(pv.kwc) + ' × ' + nb(pv.productible) + ' kWh/kWc (zone ' + p.zone + ') × ' + pct(pv.facteur) + ' = ' + kwh3(pv.production) + '/an\n' +
+      'Sur place : min(' + pct(pv.tauxMax) + ' × ' + kwh3(pv.production) + ' ; ' + pct(pv.partJour) + ' × ' + kwh3(pv.horsChauffage) +
+      (p.pvServicesGeneraux ? ' des services généraux' : ' d’électricité hors chauffage') + ') = ' + kwh3(pv.autoconsommation) +
+      ' → ' + euros(a.economieFacture) + '/an\n' +
+      'Vendu : ' + kwh3(pv.surplus) + ' × ' + nb(pv.tarif, 2) + ' €/kWh = ' + euros(a.revente) + '/an (tarif fixe : ne suit pas la hausse des prix)\n' +
+      'Économie : ' + euros(a.economie) + '/an (année 1)\n';
   }
 
   function carteAction(a, variante) {
@@ -451,6 +480,9 @@
       (a.economie >= 0 ? '<div><b>' + euros(a.economie, 2) + '</b><small>par an</small></div>' :
         '<div class="negatif"><b>+ ' + euros(-a.economie, 2) + '</b><small>de plus par an</small></div>') +
       '<div><b>' + nb(a.gainCo2 / 1000, 1) + ' t</b><small>CO₂ évité /an</small></div></div>' +
+      (a.pv ? '<p class="action-pv">' + ico('soleil') + '<span>Production <b>' + energie(a.pv.production) + '/an</b> : ' +
+        energie(a.pv.autoconsommation) + ' consommés sur place (' + pct(a.pv.taux) + '), ' + energie(a.pv.surplus) + ' vendus (' +
+        euros(a.revente) + '/an)</span></p>' : '') +
       '<dl class="action-chiffres"><div><dt>Coût TTC</dt><dd>' + plageEuros(a.cout.bas, a.cout.haut) + '</dd></div>' +
       '<div><dt>Retour brut</dt><dd>' + plageAns(a.trbBas, a.trbHaut) + '</dd></div>' +
       '<div><dt>Retour actualisé</dt><dd>' + ans(a.tra) + '</dd></div></dl>' +
@@ -523,7 +555,9 @@
         '<p class="aide">Décret tertiaire : objectif − 40 % en 2030 par rapport à une année de référence (à vérifier sur OPERAT).</p></div>') +
       '</div>';
     return '<section class="bloc section-bouquets"><div class="section-tete"><h2>' + ico('calque') + 'Bouquets de travaux</h2></div>' +
-      '<p class="aide">Calculés dans l’ordre : l’enveloppe d’abord, puis la ventilation et les systèmes. Coûts TTC hors aides.</p>' +
+      '<p class="aide">Calculés dans l’ordre : l’enveloppe d’abord, puis la ventilation et les systèmes' +
+      (r.bouquets.some(function (b) { return b.ids.indexOf('pv') >= 0; }) ? ', et les panneaux en dernier (dimensionnés sur le bâtiment amélioré)' : '') +
+      '. Coûts TTC hors aides.</p>' +
       '<div class="bouquets">' + cartes + '</div>' + detail + '</section>';
   }
 
@@ -587,7 +621,8 @@
       ligne(['Murs / toiture', 'U ≈ ' + nb(p.uMur, 2) + ori('murs') + ' / U ≈ ' + nb(p.uToit, 2) + ori('toiture')]) +
       ligne(['Fenêtres / plancher', nomChoix('vitrage', p.vitrage) + ori('vitrage') + ' / ' + nomChoix('plancher', p.plancherType) + ori('plancher')]) +
       ligne(['Chauffage / eau chaude', nomChoix('chauffage', p.chauffage) + ori('chauffage') + ' / ' + nomChoix('ecs', p.ecs) + ori('ecs')]) +
-      ligne(['Ventilation', nomChoix('ventilation', p.ventilation) + ori('ventilation')]) + '</table>' +
+      ligne(['Ventilation', nomChoix('ventilation', p.ventilation) + ori('ventilation')]) +
+      ligne(['Toiture solaire', '≈ ' + kwc(p.pvMax) + ' posables, ' + (p.photovoltaique === 'existant' ? 'panneaux déjà installés' : texteToit(p)) + ori('toitureSolaire')]) + '</table>' +
       '<h2>Consommation estimée</h2><table>' + ligne(['Usage', 'Énergie', 'kWh/an', '€/an'], true) +
       r.resultat.usages.filter(function (u) { return u.ef > 0; }).map(function (u) {
         return ligne([NOMS_USAGES[u.id], nomEnergie(u.energie), nb(sig(u.ef, 2)), nb(sig(u.cout, 2))]);
@@ -906,6 +941,7 @@
     mettre('perimetreExpose', b.perimetreExpose);
     mettre('hauteur', b.hauteur);
     mettre('niveaux', b.niveaux);
+    mettre('orientationFaitage', b.orientationFaitage);
     mettre('logements', lu.logements);
     mettre('toitureType', lu.toitureType);
     mettre('annee', lu.annee);

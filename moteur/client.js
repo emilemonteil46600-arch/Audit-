@@ -29,7 +29,8 @@
     condensation: 'Une chaudière à condensation récupère la chaleur des fumées : même énergie, moins de consommation.',
     'pac-air-air': 'Une pompe à chaleur air/air remplace des radiateurs électriques et consomme bien moins. Elle peut aussi rafraîchir l’été.',
     'ecs-thermo': 'Un ballon thermodynamique chauffe l’eau avec une petite pompe à chaleur : beaucoup moins d’électricité pour l’eau chaude.',
-    led: 'L’éclairage LED avec détection de présence consomme beaucoup moins et dure longtemps.'
+    led: 'L’éclairage LED avec détection de présence consomme beaucoup moins et dure longtemps.',
+    pv: 'Des panneaux sur le toit produisent de l’électricité : ce que vous consommez pendant qu’ils produisent n’est plus acheté, le surplus est vendu sur le réseau. Une étude confirmera la production (ombres, charpente, état de la couverture).'
   };
 
   // Par où part la chaleur, en mots simples.
@@ -86,9 +87,12 @@
   }
 
   function aides(r) {
-    return r.params.famille === 'logement' ?
+    const pv = r.actions.some(function (a) { return a.id === 'pv' && a.etat.etat === 'ok' && a.verdict !== 'non'; });
+    return (r.params.famille === 'logement' ?
       'MaPrimeRénov’, certificats d’économies d’énergie (CEE), éco-prêt à taux zéro' :
-      'certificats d’économies d’énergie (CEE) ; et si le bâtiment fait plus de 1 000 m² de tertiaire, le décret tertiaire (décret n° 2019-771) fixe des objectifs de baisse';
+      'certificats d’économies d’énergie (CEE) ; et si le bâtiment fait plus de 1 000 m² de tertiaire, le décret tertiaire (décret n° 2019-771) fixe des objectifs de baisse') +
+      // (H) dispositifs cités sans montant : conditions à vérifier au moment du devis
+      (pv ? ' ; pour des panneaux, la prime à l’autoconsommation et le contrat d’achat du surplus (conditions à vérifier)' : '');
   }
 
   function liste(mots) {
@@ -109,7 +113,7 @@
       return '<div class="client-action ' + (etude ? 'c-etude' : 'c-oui') + '"><span class="client-action-ico">' + ico(a.def.icone) + '</span><div>' +
         '<h3>' + esc(a.def.nom) + ' <span class="client-badge">' + (etude ? '🟠 À étudier' : '✅ Rentable') + '</span></h3>' +
         '<p>' + esc(POURQUOI[a.id] || a.def.note || '') + '</p>' +
-        '<ul class="client-action-chiffres"><li><b>≈ ' + F.euros(a.economie, 2) + '</b> d’économies par an</li>' +
+        '<ul class="client-action-chiffres"><li><b>≈ ' + F.euros(a.economie, 2) + '</b> d’économies par an' + (a.revente > 0 ? ', vente du surplus comprise' : '') + '</li>' +
         '<li><b>' + F.plageEuros(a.cout.bas, a.cout.haut) + '</b> TTC, hors aides</li>' +
         '<li>Remboursé en <b>' + F.plageAns(a.trbBas, a.trbHaut) + '</b></li></ul></div></div>';
     };
@@ -172,7 +176,8 @@
     const afaire = retenues(r, 'afaire'), discuter = retenues(r, 'discuter');
     const b = bouquetChoisi(r, c.bouquet);
     const ligneAction = function (a) {
-      return '• ' + a.def.nom + ' : ≈ ' + F.euros(a.economie, 2) + ' d’économies par an, pour ' + F.plageEuros(a.cout.bas, a.cout.haut) +
+      return '• ' + a.def.nom + ' : ≈ ' + F.euros(a.economie, 2) + ' d’économies par an' + (a.revente > 0 ? ' (vente du surplus comprise)' : '') +
+        ', pour ' + F.plageEuros(a.cout.bas, a.cout.haut) +
         ' TTC (hors aides), remboursé en ' + F.plageAns(a.trbBas, a.trbHaut) + '.';
     };
     const lignes = [

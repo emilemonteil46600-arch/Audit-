@@ -143,6 +143,7 @@ const deborde = function (page) {
   ok(/Murs mitoyens\s*19 %/.test(vignettes.replace(/\s+/g, ' ')), 'mitoyenneté détectée : 12 m collés au voisin sur 64 m de périmètre = 19 %');
   ok(/1948 – 1974/.test(vignettes), 'époque lue (BDNB 1972)');
   ok(/Gaz naturel/.test(vignettes), 'énergie de chauffage lue dans la BDNB');
+  ok(/Toiture solaire[\s\S]*toit plat/.test(vignettes), 'toiture solaire : toit plat (toiture en béton, BD TOPO)');
   ok(await page.isVisible('#b-dpe .liste-dpe'), 'DPE autour du bâtiment affichés');
   ok((await page.textContent('#sources')).includes('BD TOPO'), 'état des sources affiché');
   await page.waitForTimeout(3000);
@@ -152,6 +153,13 @@ const deborde = function (page) {
   await page.click('.tuile[data-cle="vitrage"][data-valeur="double-recent"]');
   const deja = await page.textContent('.deja');
   ok(/double vitrage récent/.test(deja), '« le vitrage non, déjà du double vitrage » après la réponse');
+  await page.click('.tuile[data-cle="photovoltaique"][data-valeur="existant"]');
+  ok(/Déjà des panneaux photovoltaïques/.test(await page.textContent('.deja')), 'panneaux déjà installés → l’action passe en « déjà fait »');
+  await page.click('.nsp[data-cle="photovoltaique"]');
+  await page.click('.tuile[data-cle="toiture"][data-valeur="combles-isoles-ancien"]');
+  ok(/Toiture solaire[\s\S]*pan sud \(100 %\) ; pan nord écarté/.test(await page.textContent('#b-vignettes')),
+    'toit en pente : faîtage lu sur le contour (20 m est-ouest) → pan sud équipé, pan nord écarté');
+  await page.click('.nsp[data-cle="toiture"]');
   await page.click('[data-panneau="factures"]');
   await page.fill('[data-facture="gaz"]', '60000');
   await page.press('[data-facture="gaz"]', 'Tab');
@@ -190,6 +198,9 @@ const deborde = function (page) {
   // Un deuxième cas (l'exemple + ses factures), puis l'onglet Validation
   await page.click('[data-vue="diagnostic"]');
   await page.click('#exemple');
+  const carteP = await page.textContent('.action:has-text("Panneaux photovoltaïques")');
+  ok(/Production 3\s800 kWh\/an/.test(carteP) && /980 kWh consommés sur place/.test(carteP) && /À discuter/.test(carteP),
+    'exemple : panneaux 3 kWc, 3 800 kWh/an dont 980 sur place, 🟠');
   await page.click('[data-panneau="factures"]');
   await page.fill('[data-facture="gaz"]', '30000');
   await page.press('[data-facture="gaz"]', 'Tab');
@@ -213,6 +224,8 @@ const deborde = function (page) {
   ok(await page.isHidden('#vue-diagnostic') && /Ce que nous recommandons/.test(client) && /Prochaines étapes/.test(client), 'vue client affichée');
   ok(/Isoler les combles/.test(client) && /Ce qui ne vaut pas le coup ici/.test(client) && /votre|vos /i.test(client), 'vue client : recommandations, ce qui ne vaut pas le coup, vouvoiement');
   ok(/ont servi à caler/.test(client) && !/Cas de référence/.test(await page.textContent('.client-titre h1')), 'vue client : calage mentionné, titre sans jargon interne');
+  ok(/Panneaux photovoltaïques/.test(client) && /vente du surplus comprise/.test(client) && /prime à l’autoconsommation/.test(client),
+    'vue client : panneaux à étudier, vente du surplus, aide citée');
   await page.fill('[data-signature]', 'Émile');
   await page.press('[data-signature]', 'Tab');
   ok(/Préparé par Émile/.test(await page.textContent('.client-date')), '« Préparé par » sur la page client');
@@ -220,6 +233,7 @@ const deborde = function (page) {
   await page.waitForTimeout(300);
   const mail = await page.evaluate(function () { return navigator.clipboard.readText().catch(function () { return ''; }); });
   ok(/^Bonjour,/.test(mail) && /Isoler les combles/.test(mail) && /Bien cordialement,\nÉmile/.test(mail), 'texte de mail copié (' + mail.split('\n').length + ' lignes)');
+  ok(/Panneaux photovoltaïques : ≈ 330 €/.test(mail), 'mail : panneaux photovoltaïques avec leur économie');
   await page.emulateMedia({ media: 'print' });
   ok(await page.isHidden('.entete') && await page.isVisible('.client-page') && await page.isHidden('.client-barre'), 'impression : seulement la page client');
   await page.pdf({ path: path.join(SORTIE, 'vue-client.pdf'), format: 'A4', printBackground: true });

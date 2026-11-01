@@ -38,6 +38,12 @@
       source: "Convention de l'outil (H) : les contours de la BD TOPO sont précis à environ 1 m près",
       date: '2026-10-30', statut: 'exemple'
     },
+    allongementFaitage: {
+      valeur: 0.1, unite: '–',
+      libelle: 'Allongement minimal du contour pour en déduire la direction du faîtage (panneaux photovoltaïques)',
+      source: "Convention de l'outil (H) : 0,1 ≈ un rectangle 1,2 fois plus long que large ; en dessous (bâtiment presque carré, en L), l'orientation du toit est supposée inconnue",
+      date: '2026-11-01', statut: 'exemple'
+    },
     rayonDpe: {
       valeur: 20, unite: 'm',
       libelle: "Un DPE sert à pré-remplir (année, énergie) s'il est à moins de cette distance du bâtiment",

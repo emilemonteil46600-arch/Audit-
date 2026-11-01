@@ -63,3 +63,10 @@ test('Chaque choix des questions a ses valeurs chiffrées', function () {
   H.ENERGIES.forEach(function (e) { doit('energie.' + e.id + '.prix'); doit('energie.' + e.id + '.ep'); });
   Object.keys(H.ZONES).forEach(function (z) { doit('climat.' + z + '.dju'); doit('climat.' + z + '.tbase'); });
 });
+
+test('Photovoltaïque : un productible par zone climatique, une production relative tous les 45°', function () {
+  const ids = new Set(H.VALEURS.map(function (v) { return v.id; }));
+  Object.keys(H.ZONES).forEach(function (z) { assert.ok(ids.has('pv.productible.' + z), z); });
+  [0, 45, 90, 135, 180].forEach(function (a) { assert.ok(ids.has('pv.facteur.' + a), String(a)); });
+  H.CHOIX.photovoltaique.forEach(function (c) { assert.ok(['aucun', 'existant'].includes(c.id), c.id); });
+});

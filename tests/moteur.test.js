@@ -250,3 +250,86 @@ test('Parts des usages et des parois : la somme fait 100 %', function () {
   assert.ok(proche(r.resultat.parts.chauffage, 29753.1 / 34945.809, 1e-6));
   assert.ok(proche(r.modele.deperditions.parts.murs, 163.2 / 508.6, 1e-9));
 });
+
+test('Photovoltaïque : faîtage est-ouest → pan sud, 3 kWc, 3 840 kWh dont 980 sur place, 330 €/an, 🟠', function () {
+  const r = M.diagnostiquer(entreesExemple({ orientationFaitage: { valeur: 90, origine: 'carte' } }), {}, H);
+  const toit = r.params.pvToiture;
+  assert.deepEqual(toit.pans.map(function (p) { return [p.nom, p.equipe]; }), [['sud', true], ['nord', false]]);
+  // Pan sud : 50 m² au sol / cos 35° = 61 m², × 0,7 utilisable × 0,2 kWc/m² ≈ 8,5 kWc
+  assert.ok(proche(r.params.pvMax, 50 / Math.cos(35 * Math.PI / 180) * 0.7 * 0.2, 1e-9));
+  const a = r.actions.find(function (x) { return x.id === 'pv'; });
+  assert.equal(a.cout.quantite.valeur, 3);
+  assert.ok(proche(a.pv.production, 3 * 1280, 1e-9));
+  // Sur place : min(0,9 × 3 840 ; 0,35 × 2 800 kWh d'électricité hors chauffage) = 980 kWh
+  assert.ok(proche(a.pv.autoconsommation, 980, 1e-9));
+  assert.ok(proche(a.pv.surplus, 2860, 1e-9));
+  assert.ok(proche(a.economie, 980 * 0.22 + 2860 * 0.04, 1e-9));
+  assert.ok(proche(a.revente, 2860 * 0.04, 1e-9));
+  assert.ok(proche(a.cout.bas, 3 * 1100 * 1.1 * 1.2, 1e-9));
+  assert.ok(proche(a.cout.haut, 3 * 1800 * 1.1 * 1.2, 1e-9));
+  assert.ok(proche(a.trb, 5742 / 330, 1e-9));
+  assert.equal(a.verdict, 'discuter');
+  // La vente du surplus ne suit pas la hausse des prix : temps de retour plus long qu'avec tout indexé
+  assert.ok(a.tra > M.tempsRetourActualise(a.cout.moyen, a.economie, 0.03, 0.04, 60));
+  // Étiquette : seulement la part qui couvre les 5 usages (éclairage + auxiliaires = 400 sur 2 800 kWh)
+  assert.ok(proche(a.gainEp5, 980 * 1.9 * 400 / 2800, 1e-6));
+  // La taille retenue a la meilleure VAN parmi celles essayées
+  const choix = M.dimensionnerPV(r.params, D());
+  assert.deepEqual(choix.candidats.map(function (c) { return Math.round(c.kwc * 100) / 100; }), [3, 6, 8.55]);
+  choix.candidats.forEach(function (c) { assert.ok(c.van <= a.van + 1e-6); });
+  // Les panneaux viennent en dernier dans un bouquet
+  const conseille = r.bouquets.find(function (b) { return b.id === 'conseille'; });
+  assert.equal(conseille.ids[conseille.ids.length - 1], 'pv');
+  // Le bouton « Exemple » charge la même maison, faîtage est-ouest compris
+  const exemple = M.diagnostiquer(H.BATIMENTS_TYPES[0].entrees, {}, H);
+  assert.ok(proche(exemple.actions.find(function (x) { return x.id === 'pv'; }).pv.production, 3840, 1e-9));
+});
+
+test('Photovoltaïque : orientations, toit plat, panneaux existants, toit trop petit', function () {
+  const d = D();
+  assert.equal(M.ecartAuSud(180), 0);
+  assert.equal(M.ecartAuSud(0), 180);
+  assert.equal(M.ecartAuSud(270), 90);
+  assert.equal(M.ecartAuSud(-45), 135);
+  assert.ok(proche(M.facteurOrientation(22.5, d), 0.975, 1e-9));
+  assert.ok(proche(M.facteurOrientation(180, d), 0.6, 1e-9));
+  // Faîtage nord-sud : deux pans est et ouest, équipés tous les deux
+  const ns = M.toitureSolaire('combles', 100, 0, d);
+  assert.deepEqual(ns.pans.map(function (p) { return p.nom; }).sort(), ['est', 'ouest']);
+  assert.ok(ns.pans.every(function (p) { return p.equipe && proche(p.facteur, 0.85, 1e-9); }));
+  // Toit plat : la moitié du toit en modules → 100 × 0,5 × 0,2 = 10 kWc
+  assert.ok(proche(M.toitureSolaire('terrasse', 100, null, d).kwcMax, 10, 1e-9));
+  // Les meilleurs pans se remplissent d'abord
+  const toit = { pans: [{ equipe: true, kwc: 2, facteur: 1 }, { equipe: true, kwc: 2, facteur: 0.8 }] };
+  assert.ok(proche(M.facteurPose(toit, 3), (2 * 1 + 1 * 0.8) / 3, 1e-9));
+  // Sans carte : orientation inconnue, un seul pan à 90 %
+  const sans = M.diagnostiquer(entreesExemple(), {}, H);
+  assert.equal(sans.params.pvToiture.pans.length, 1);
+  assert.ok(proche(sans.actions.find(function (x) { return x.id === 'pv'; }).pv.production, 3 * 1280 * 0.9, 1e-9));
+  const existant = M.diagnostiquer(entreesExemple({ photovoltaique: { valeur: 'existant', origine: 'saisie' } }), {}, H);
+  assert.equal(existant.actions.find(function (x) { return x.id === 'pv'; }).etat.etat, 'deja');
+  // 30 m² au sol : 15 / cos 35° × 0,7 × 0,2 ≈ 2,6 kWc < 3 kWc
+  const petit = M.diagnostiquer(entreesExemple({ surfaceSol: { valeur: 30, origine: 'carte' }, perimetre: { valeur: 22, origine: 'carte' },
+    perimetreExpose: { valeur: 22, origine: 'carte' } }), {}, H);
+  assert.equal(petit.actions.find(function (x) { return x.id === 'pv'; }).etat.etat, 'sansObjet');
+});
+
+test('Photovoltaïque : calage sur factures, logement collectif, bureaux', function () {
+  // Factures d'électricité 3 000 kWh : la part de jour suit l'électricité calée (0,35 × 3 000 = 1 050 kWh)
+  const cale = M.diagnostiquer(entreesExemple({ orientationFaitage: { valeur: 90, origine: 'carte' } }), { gaz: 30000, electricite: 3000 }, H);
+  assert.ok(proche(cale.actions.find(function (x) { return x.id === 'pv'; }).pv.autoconsommation, 1050, 1e-9));
+  // Logement collectif : seulement les services généraux (VMC, pompes)
+  const immeuble = M.diagnostiquer(H.BATIMENTS_TYPES[1].entrees, {}, H);
+  const aux = immeuble.modele.usages.find(function (u) { return u.id === 'auxiliaires'; }).ef;
+  const pv = immeuble.actions.find(function (x) { return x.id === 'pv'; }).pv;
+  assert.ok(pv.autoconsommation <= 0.35 * aux + 1e-9);
+  // Bureaux : on consomme le jour, presque toute la production reste sur place
+  const bureaux = M.diagnostiquer(H.BATIMENTS_TYPES[2].entrees, {}, H);
+  const b = bureaux.actions.find(function (x) { return x.id === 'pv'; });
+  assert.ok(proche(b.pv.taux, 0.9, 1e-9));
+  assert.ok(b.cout.quantite.valeur > 9);
+  // La production ne compte pas dans « où part l'énergie »
+  const somme = function (o) { return Object.keys(o).reduce(function (t, k) { return t + o[k]; }, 0); };
+  const apres = bureaux.bouquets.find(function (x) { return x.ids.indexOf('pv') >= 0; }).apres;
+  assert.ok(apres.parts.pv === undefined && proche(somme(apres.parts), 1, 1e-9));
+});

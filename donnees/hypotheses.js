@@ -137,6 +137,10 @@
       { id: 'aucune', nom: 'Aucune' },
       { id: 'partielle', nom: 'Partielle' },
       { id: 'totale', nom: 'Tout le bâtiment' }
+    ],
+    photovoltaique: [
+      { id: 'aucun', nom: 'Aucun' },
+      { id: 'existant', nom: 'Déjà installés', aide: 'Saisis alors les factures nettes' }
     ]
   };
 
@@ -393,7 +397,8 @@
     ['energie.electricite.co2.froid', 'Émissions — électricité, climatisation', 0.064, 'kgCO₂/kWh'],
     ['energie.electricite.co2.eclairage', 'Émissions — électricité, éclairage', 0.069, 'kgCO₂/kWh'],
     ['energie.electricite.co2.auxiliaires', 'Émissions — électricité, auxiliaires', 0.064, 'kgCO₂/kWh'],
-    ['energie.electricite.co2.autres', 'Émissions — électricité, autres usages', 0.064, 'kgCO₂/kWh']
+    ['energie.electricite.co2.autres', 'Émissions — électricité, autres usages', 0.064, 'kgCO₂/kWh'],
+    ['energie.electricite.co2.pv', 'Émissions évitées — électricité photovoltaïque autoconsommée', 0.064, 'kgCO₂/kWh']
   ]);
   groupe('Énergies', 'Rapport PCS / PCI du gaz naturel : 1,11 (valeur usuelle des fournisseurs et du DPE), à vérifier (H)', 'exemple', [
     ['energie.gaz.pcsPci', 'Gaz : kWh de la facture (PCS) par kWh PCI', 1.11, '–']
@@ -508,7 +513,52 @@
     ['duree.pac', 'Durée de vie — PAC', 17, 'ans'],
     ['duree.condensation', 'Durée de vie — chaudière', 20, 'ans'],
     ['duree.ecs', 'Durée de vie — ballon thermodynamique', 15, 'ans'],
-    ['duree.led', 'Durée de vie — LED', 15, 'ans']
+    ['duree.led', 'Durée de vie — LED', 15, 'ans'],
+    ['duree.pv', 'Durée de vie — panneaux photovoltaïques', 25, 'ans']
+  ]);
+
+  // Photovoltaïque en toiture : autoconsommation avec vente du surplus.
+  groupe('Photovoltaïque', "Ordre de grandeur PVGIS (Commission européenne) pour une ville de la zone, modules au sud inclinés à 30°, pertes du système comprises. À remplacer par PVGIS au point exact (H)", 'exemple', [
+    ['pv.productible.H1a', 'Production par kWc — zone H1a', 1050, 'kWh/kWc·an'],
+    ['pv.productible.H1b', 'Production par kWc — zone H1b', 1100, 'kWh/kWc·an'],
+    ['pv.productible.H1c', 'Production par kWc — zone H1c', 1200, 'kWh/kWc·an'],
+    ['pv.productible.H2a', 'Production par kWc — zone H2a', 1080, 'kWh/kWc·an'],
+    ['pv.productible.H2b', 'Production par kWc — zone H2b', 1180, 'kWh/kWc·an'],
+    ['pv.productible.H2c', 'Production par kWc — zone H2c', 1280, 'kWh/kWc·an'],
+    ['pv.productible.H2d', 'Production par kWc — zone H2d', 1380, 'kWh/kWc·an'],
+    ['pv.productible.H3', 'Production par kWc — zone H3', 1450, 'kWh/kWc·an']
+  ]);
+  groupe('Photovoltaïque', "Ordre de grandeur des tableaux d'orientation des guides photovoltaïques (pente 30 à 35°), à vérifier avec PVGIS (H)", 'exemple', [
+    ['pv.facteur.0', 'Production relative — pan plein sud', 1, '–'],
+    ['pv.facteur.45', 'Production relative — pan sud-est ou sud-ouest', 0.95, '–'],
+    ['pv.facteur.90', 'Production relative — pan est ou ouest', 0.85, '–'],
+    ['pv.facteur.135', 'Production relative — pan nord-est ou nord-ouest', 0.7, '–'],
+    ['pv.facteur.180', 'Production relative — pan plein nord', 0.6, '–'],
+    ['pv.facteur.terrasse', 'Production relative — toit plat (modules peu inclinés)', 0.9, '–'],
+    ['pv.facteur.inconnu', 'Production relative — orientation inconnue (sans carte)', 0.9, '–']
+  ]);
+  groupe('Photovoltaïque', SOURCES.outil, 'exemple', [
+    ['pv.pente', 'Pente supposée des toits en combles', 35, '°'],
+    ['pv.part.pan', 'Part utilisable d’un pan (rives, faîtage, obstacles)', 0.7, '–'],
+    ['pv.part.terrasse', 'Part utilisable d’un toit plat (espacement des rangées, acrotères)', 0.5, '–'],
+    ['pv.seuilPan', 'On équipe un pan si sa production relative est au moins de', 0.75, '–'],
+    ['pv.densite', 'Puissance par m² de module (≈ 420 Wc pour 2 m²)', 0.2, 'kWc/m²'],
+    ['pv.partJour.logement', 'Part de l’électricité (hors chauffage) consommée quand il y a du soleil — logement', 0.35, '–'],
+    ['pv.partJour.tertiaire', 'Part de l’électricité (hors chauffage) consommée quand il y a du soleil — tertiaire', 0.6, '–'],
+    ['pv.tauxMax', 'Part maximale de la production consommée sur place', 0.9, '–'],
+    ['pv.tailleMin', 'Plus petite installation proposée (taille courante en résidentiel)', 3, 'kWc'],
+    ['pv.taille.moyenne', 'Taille courante en résidentiel — moyenne', 6, 'kWc'],
+    ['pv.taille.grande', 'Taille courante en résidentiel — grande', 9, 'kWc']
+  ]);
+  groupe('Photovoltaïque', "Obligation d'achat du surplus (petites installations) : tarif fortement réduit depuis 2025. Ordre de grandeur à vérifier sur le site de la CRE ou d'EDF OA (H)", 'exemple', [
+    ['pv.tarifSurplus', 'Prix de vente du surplus injecté sur le réseau', 0.04, '€/kWh']
+  ]);
+  groupe('Photovoltaïque', SOURCES.bao, 'exemple', [
+    ['cout.pv.bas', 'Photovoltaïque en toiture — bas', 1100, '€/kWc'],
+    ['cout.pv.haut', 'Photovoltaïque en toiture — haut', 1800, '€/kWc']
+  ]);
+  groupe('Photovoltaïque', "TVA de 20 % par défaut ; des taux réduits existent pour certaines petites installations résidentielles, à vérifier (H)", 'exemple', [
+    ['eco.tva.pv', 'TVA des panneaux photovoltaïques', 0.2, '–']
   ]);
 
   /* ---------- Bâtiments types (fictifs) ----------
@@ -518,7 +568,8 @@
   const BATIMENTS_TYPES = [
     { nom: 'Maison de plain-pied de 1970, Toulouse', entrees: {
       usage: s('logement-individuel'), annee: s(1970), chauffage: s('gaz-ancienne'), departement: s('31'),
-      surfaceSol: s(100), niveaux: s(1), perimetre: s(40), perimetreExpose: s(40), hauteur: s(3) } },
+      surfaceSol: s(100), niveaux: s(1), perimetre: s(40), perimetreExpose: s(40), hauteur: s(3),
+      orientationFaitage: s(90) } }, // faîtage est-ouest : un pan au sud
     { nom: 'Immeuble de logements de 1965, Lyon', entrees: {
       usage: s('logement-collectif'), annee: s(1965), chauffage: s('gaz-ancienne'), departement: s('69'),
       surfaceSol: s(400), niveaux: s(5), perimetre: s(90), perimetreExpose: s(70), hauteur: s(15), logements: s(24) } },

@@ -286,13 +286,14 @@
     const mit = C.mitoyennete(b.contour, voisins, R, V.toleranceMitoyen.valeur);
     const surfaceSol = C.surfaceSolM2(b.contour, R);
     const est = C.estimerSurface(surfaceSol, b.lu.hauteur, b.lu.etages, V.hauteurEtage.valeur);
+    const faitage = C.orientationFaitage(b.contour, R, V.allongementFaitage.valeur);
     dessinerSelection(b, mit.cotes);
     cadrer(b.contour);
     rappels.surBatiment({
       id: b.id, lon: centre[0], lat: centre[1], contour: b.contour, hauteurDessin: b.h, cotes: mit.cotes,
       surfaceSol: surfaceSol, perimetre: mit.perimetre, perimetreExpose: mit.expose, partMitoyenne: mit.part,
       hauteur: b.lu.hauteur, niveaux: est.niveaux, origineNiveaux: est.origineNiveaux, surfacePlancher: est.surfacePlancher,
-      bdtopo: b.lu, adresse: adresse
+      orientationFaitage: faitage ? faitage.angle : null, bdtopo: b.lu, adresse: adresse
     });
     if (!adresse) adresseDuPoint(centre[0], centre[1]).then(function (a) { if (a && selection === b && rappels.surAdresse) rappels.surAdresse(a); });
     complements(centre[0], centre[1], adresse, b);

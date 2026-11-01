@@ -11,6 +11,8 @@ en fourchette et les travaux qui valent le coup (✅ à faire / 🟠 à discuter
 - Le calcul marche sans réseau (bouton « Exemple » ou saisie sans carte).
 - Onglet **Validation** : compare le moteur à des bâtiments dont tu connais les factures (biais, fourchette).
 - **Vue client** : une page simple à montrer ou à imprimer en PDF, et un texte prêt pour un mail.
+- **Photovoltaïque** : orientation du toit lue sur la carte, taille des panneaux à la meilleure rentabilité,
+  part consommée sur place et vente du surplus.
 
 ## Vérifier
 

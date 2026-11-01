@@ -156,3 +156,23 @@ test('Photos : seules les adresses https sont gardées', function () {
   assert.equal(C.lirePhotos([{ assets: { thumb: { href: 'javascript:alert(1)' } } }]).length, 0);
   assert.equal(C.lirePhotos([{ assets: { thumb: { href: 'https://x/t.jpg' }, sd: { href: 'http://x/s.jpg' } } }])[0].image, 'https://x/t.jpg');
 });
+
+test('Faîtage : rectangle 20 m est-ouest × 12 m → 90°, allongement 0,25 ; carré → inconnu', function () {
+  const lat = 43.6;
+  const dLat = function (m) { return m / R * 180 / Math.PI; };
+  const dLon = function (m) { return m / R * 180 / Math.PI / Math.cos(lat * Math.PI / 180); };
+  const rect = [[1.44, lat], [1.44 + dLon(20), lat], [1.44 + dLon(20), lat + dLat(12)], [1.44, lat + dLat(12)], [1.44, lat]];
+  const o = C.orientationFaitage(rect, R, 0.1);
+  assert.ok(proche(o.angle, 90, 0.01));
+  assert.ok(proche(o.allongement, 16 / 64, 0.001));
+  // Le même, long dans le sens nord-sud → 0°
+  const long = [[1.44, lat], [1.44 + dLon(12), lat], [1.44 + dLon(12), lat + dLat(20)], [1.44, lat + dLat(20)]];
+  const n = C.orientationFaitage(long, R, 0.1).angle;
+  assert.ok(proche(Math.min(n, 180 - n), 0, 0.01));
+  // Tourné de 45° (losange allongé vers le nord-est) → 45°
+  const k = 20 / Math.SQRT2, l = 12 / Math.SQRT2;
+  const tourne = [[0, 0], [k, k], [k - l, k + l], [-l, l]].map(function (p) { return [1.44 + dLon(p[0]), lat + dLat(p[1])]; });
+  assert.ok(proche(C.orientationFaitage(tourne, R, 0.1).angle, 45, 0.01));
+  const carre = [[1.44, lat], [1.44 + dLon(10), lat], [1.44 + dLon(10), lat + dLat(10)], [1.44, lat + dLat(10)]];
+  assert.equal(C.orientationFaitage(carre, R, 0.1), null);
+});
