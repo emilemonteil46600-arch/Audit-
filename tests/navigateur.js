@@ -144,10 +144,33 @@ const deborde = function (page) {
   ok(/1948 – 1974/.test(vignettes), 'époque lue (BDNB 1972)');
   ok(/Gaz naturel/.test(vignettes), 'énergie de chauffage lue dans la BDNB');
   ok(/Toiture solaire[\s\S]*toit plat/.test(vignettes), 'toiture solaire : toit plat (toiture en béton, BD TOPO)');
+  ok(/494 m² de façade exposée/.test(vignettes.replace(/\s+/g, ' ')), 'façade exposée : 52 m × 9,5 m = 494 m² (voisin plus haut : tout le côté collé est mitoyen)');
+  await page.click('.vignette-i');
+  ok(await page.isVisible('.vignette-source') && /contour/.test(await page.textContent('.vignette-source')), '« d’où ça vient ? » sur une vignette');
   ok(await page.isVisible('#b-dpe .liste-dpe'), 'DPE autour du bâtiment affichés');
   ok((await page.textContent('#sources')).includes('BD TOPO'), 'état des sources affiché');
   await page.waitForTimeout(3000);
   await page.screenshot({ path: path.join(SORTIE, 'outil-carte.png') });
+  // Maj + clic sur le voisin collé à l'est : les deux bâtiments comptent ensemble (240 + 168 = 408 m² au sol)
+  await page.click('#vue-3d');
+  await page.waitForTimeout(1500);
+  const boite = await page.locator('.maplibregl-canvas').boundingBox();
+  // Échelle lue sur la barre d'échelle de la carte (largeur en px pour la distance affichée)
+  const pxParM = await page.evaluate(function () {
+    const e = document.querySelector('.maplibregl-ctrl-scale');
+    const m = e.textContent.match(/([\d.,]+)\s*(k?m)/);
+    return e.getBoundingClientRect().width / (parseFloat(m[1].replace(',', '.')) * (m[2] === 'km' ? 1000 : 1));
+  });
+  const ouVoisin = { x: boite.width / 2 + 17 * pxParM, y: boite.height / 2 };
+  await page.screenshot({ path: path.join(SORTIE, 'outil-maj-clic.png') });
+  await page.click('.maplibregl-canvas', { position: ouVoisin, modifiers: ['Shift'] });
+  await page.waitForFunction(function () { return /Ensemble/.test(document.querySelector('#b-vignettes').textContent); }, null, { timeout: 5000 }).catch(function () {});
+  const ensemble = (await page.textContent('#b-vignettes')).replace(/\s+/g, ' ');
+  ok(/Ensemble\s*2 bâtiments/.test(ensemble) && /408 m²/.test(ensemble), 'Maj + clic : deux bâtiments comptés ensemble (408 m² au sol)' + (/Ensemble/.test(ensemble) ? '' : ' — vignettes : ' + ensemble.slice(0, 160)));
+  await page.click('.maplibregl-canvas', { position: ouVoisin, modifiers: ['Shift'] });
+  await page.waitForFunction(function () { return !/Ensemble/.test(document.querySelector('#b-vignettes').textContent); }, null, { timeout: 5000 }).catch(function () {});
+  ok(/240 m²/.test(await page.textContent('#b-vignettes')), 'Maj + clic à nouveau : le voisin est retiré');
+  await page.click('#vue-3d');
 
   await page.click('[data-panneau="questions"]');
   await page.click('.tuile[data-cle="vitrage"][data-valeur="double-recent"]');
@@ -157,7 +180,7 @@ const deborde = function (page) {
   ok(/Déjà des panneaux photovoltaïques/.test(await page.textContent('.deja')), 'panneaux déjà installés → l’action passe en « déjà fait »');
   await page.click('.nsp[data-cle="photovoltaique"]');
   await page.click('.tuile[data-cle="toiture"][data-valeur="combles-isoles-ancien"]');
-  ok(/Toiture solaire[\s\S]*pan sud \(100 %\) ; pan nord écarté/.test(await page.textContent('#b-vignettes')),
+  ok(/Toiture solaire[\s\S]*pan sud \(100 %[^)]*\) ; pan nord écarté/.test(await page.textContent('#b-vignettes')),
     'toit en pente : faîtage lu sur le contour (20 m est-ouest) → pan sud équipé, pan nord écarté');
   await page.click('.nsp[data-cle="toiture"]');
   await page.click('[data-panneau="factures"]');
@@ -168,9 +191,21 @@ const deborde = function (page) {
   await page.fill('[data-dju]', '2300');
   await page.press('[data-dju]', 'Tab');
   ok(/année à 2\s300 DJU/.test(await page.textContent('#f-bilan')), 'correction climatique des factures (2 300 DJU)');
+  await page.fill('[data-aides]', '30');
+  await page.press('[data-aides]', 'Tab');
+  ok(await page.isVisible('.apres-aides') && /30 % d’aides estimées/.test(await page.textContent('.section-actions')), 'aides estimées : coût après aides et retours recalculés');
+  await page.fill('[data-aides]', '');
+  await page.press('[data-aides]', 'Tab');
   await page.fill('[data-nom-cas]', 'Immeuble test');
   await page.click('[data-action="garder-cas"]');
   ok(/gardé/.test(await page.textContent('.toast')), 'bâtiment gardé comme cas de référence');
+  await page.click('.section-metres summary');
+  const metres = (await page.innerText('.section-metres')).replace(/\s+/g, ' ');
+  ok(/S 20,0 190,0/.test(metres) && /O 12,0 114,0/.test(metres) && !/ E 12,0/.test(metres), 'métrés par orientation : S 190 m², O 114 m², est mitoyen retiré');
+  await page.click('[data-action="copier-metres"]');
+  await page.waitForTimeout(300);
+  const excel = await page.evaluate(function () { return navigator.clipboard.readText().catch(function () { return ''; }); });
+  ok(/S\t20,0\t190,0/.test(excel), 'métrés copiés pour Excel (colonnes séparées par des tabulations)');
   const bouquet = await page.$('[data-bouquet="complet"]');
   if (bouquet) { await bouquet.click(); ok(await page.isVisible('.graphe-cascade'), 'cascade du bouquet affichée'); }
   const [telechargement] = await Promise.all([page.waitForEvent('download'), page.click('[data-action="telecharger-fiche"]')]);
@@ -201,6 +236,9 @@ const deborde = function (page) {
   const carteP = await page.textContent('.action:has-text("Panneaux photovoltaïques")');
   ok(/Production 3\s800 kWh\/an/.test(carteP) && /980 kWh consommés sur place/.test(carteP) && /À discuter/.test(carteP),
     'exemple : panneaux 3 kWc, 3 800 kWh/an dont 980 sur place, 🟠');
+  ok(/eau à ≈ 60 °C/.test(await page.textContent('.action:has-text("Pompe à chaleur air/eau")')), 'PAC seule : radiateurs existants à 60 °C (sans isolation)');
+  await page.click('[data-bouquet="conseille"]');
+  ok(/Radiateurs existants compatibles PAC basse température/.test(await page.textContent('.section-bouquets')), 'bouquet conseillé : badge « radiateurs compatibles PAC basse température »');
   await page.click('[data-panneau="factures"]');
   await page.fill('[data-facture="gaz"]', '30000');
   await page.press('[data-facture="gaz"]', 'Tab');
@@ -213,6 +251,12 @@ const deborde = function (page) {
   const [exportCas] = await Promise.all([page.waitForEvent('download'), page.click('[data-action="exporter-cas"]')]);
   const contenu = JSON.parse(fs.readFileSync(await exportCas.path(), 'utf8'));
   ok(contenu.format === 'audit-flash-cas' && contenu.cas.length === 2, 'export des cas de référence (JSON)');
+  await page.click('[data-vue="donnees"]');
+  const [sauvegarde] = await Promise.all([page.waitForEvent('download'), page.click('[data-action="exporter-tout"]')]);
+  const tout = JSON.parse(fs.readFileSync(await sauvegarde.path(), 'utf8'));
+  ok(tout.format === 'audit-flash-sauvegarde' && tout.cas.length === 2 && tout.donnees['energie.gaz.prix'] === 0.15 && Object.keys(tout.validees).length === 1,
+    'sauvegarde complète : valeurs modifiées, validées et cas (JSON)');
+  await page.click('[data-vue="validation"]');
   ok(await page.isHidden('#vue-diagnostic'), 'Validation : le diagnostic est masqué');
   await page.screenshot({ path: path.join(SORTIE, 'outil-validation.png'), fullPage: true });
   await page.click('tr:has-text("Maison exemple") [data-ouvrir-cas]');
@@ -234,6 +278,7 @@ const deborde = function (page) {
   const mail = await page.evaluate(function () { return navigator.clipboard.readText().catch(function () { return ''; }); });
   ok(/^Bonjour,/.test(mail) && /Isoler les combles/.test(mail) && /Bien cordialement,\nÉmile/.test(mail), 'texte de mail copié (' + mail.split('\n').length + ' lignes)');
   ok(/Panneaux photovoltaïques : ≈ 330 €/.test(mail), 'mail : panneaux photovoltaïques avec leur économie');
+  ok(/radiateurs actuels devraient suffire/.test(client + mail), 'vue client et mail : les radiateurs actuels suffisent avec une PAC basse température');
   await page.emulateMedia({ media: 'print' });
   ok(await page.isHidden('.entete') && await page.isVisible('.client-page') && await page.isHidden('.client-barre'), 'impression : seulement la page client');
   await page.pdf({ path: path.join(SORTIE, 'vue-client.pdf'), format: 'A4', printBackground: true });

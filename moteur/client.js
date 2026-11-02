@@ -95,6 +95,26 @@
       (pv ? ' ; pour des panneaux, la prime à l’autoconsommation et le contrat d’achat du surplus (conditions à vérifier)' : '');
   }
 
+  // Obligations réglementaires (tertiaire), en une phrase chacune.
+  function obligations(r) {
+    return (r.alertes || []).map(function (al) {
+      if (al.id === 'tertiaire') {
+        return '<li><b>Décret tertiaire</b> : votre consommation doit baisser de 40 % d’ici 2030 (puis 50 % en 2040, 60 % en 2050) ' +
+          'par rapport à une année de référence ; à déclarer chaque année sur la plateforme OPERAT.</li>';
+      }
+      return '<li><b>Gestion technique (décret BACS)</b> : au-delà de ' + al.seuil + ' kW de chauffage, un système de pilotage (GTB) ' +
+        (al.certain ? 'est obligatoire' : 'peut être obligatoire') + (al.echeance === 2025 ? '.' : ' au 1er janvier 2027.') + '</li>';
+    }).join('');
+  }
+
+  // Radiateurs existants et pompe à chaleur, en une phrase (seulement si le programme contient une PAC air/eau).
+  function radiateurs(b) {
+    if (!b || !b.emetteurs || b.ids.indexOf('pac-air-eau') < 0) return '';
+    return b.emetteurs.compatible ?
+      'Après l’isolation, vos radiateurs actuels devraient suffire avec une pompe à chaleur basse température (eau à environ ' + F.nombre(b.emetteurs.temperature) + ' °C) : pas besoin de les changer (à confirmer en visite).' :
+      'Vos radiateurs actuels demanderaient une eau à environ ' + F.nombre(b.emetteurs.temperature) + ' °C : il faudra une pompe à chaleur haute température ou remplacer certains radiateurs.';
+  }
+
   function liste(mots) {
     return mots.length <= 1 ? mots.join('') : mots.slice(0, -1).join(', ') + ' et ' + mots[mots.length - 1];
   }
@@ -114,7 +134,7 @@
         '<h3>' + esc(a.def.nom) + ' <span class="client-badge">' + (etude ? '🟠 À étudier' : '✅ Rentable') + '</span></h3>' +
         '<p>' + esc(POURQUOI[a.id] || a.def.note || '') + '</p>' +
         '<ul class="client-action-chiffres"><li><b>≈ ' + F.euros(a.economie, 2) + '</b> d’économies par an' + (a.revente > 0 ? ', vente du surplus comprise' : '') + '</li>' +
-        '<li><b>' + F.plageEuros(a.cout.bas, a.cout.haut) + '</b> TTC, hors aides</li>' +
+        '<li><b>' + F.plageEuros(a.cout.net.bas, a.cout.net.haut) + '</b> TTC, ' + (a.cout.aide ? 'aides estimées déduites' : 'hors aides') + '</li>' +
         '<li>Remboursé en <b>' + F.plageAns(a.trbBas, a.trbHaut) + '</b></li></ul></div></div>';
     };
 
@@ -152,16 +172,20 @@
 
       (b && b.etapes.length > 1 ? '<section class="client-section"><h2>Le programme conseillé</h2>' +
         '<p>En enchaînant ces travaux (' + esc(liste(b.etapes.map(function (e) { return e.nom.toLowerCase(); }))) + ') : environ <b>− ' + F.pct(b.gainPart) + '</b> d’énergie, ' +
-        '<b>≈ ' + esc(F.euros(b.economie, 2)) + ' d’économies par an</b>, pour <b>' + esc(F.plageEuros(b.cout.bas, b.cout.haut)) + '</b> TTC hors aides.' +
+        '<b>≈ ' + esc(F.euros(b.economie, 2)) + ' d’économies par an</b>, pour <b>' + esc(F.plageEuros(b.cout.net.bas, b.cout.net.haut)) + '</b> TTC ' +
+        (b.cout.aide ? 'après aides estimées.' : 'hors aides.') +
         (et ? ' Étiquette indicative : <b>' + b.avant.etiquette.classe + ' → ' + b.apres.etiquette.classe + '</b>.' : '') + '</p>' +
         G.cascade(b.avant.total.ef, b.etapes.map(function (e) { return { nom: e.nom, icone: e.icone, avant: e.efAvant, apres: e.efApres }; }), b.apres.total.ef, F.energie) +
-        '<p class="client-note">Chaque étape part du bâtiment déjà amélioré : les gains ne s’additionnent pas, ils se suivent.</p></section>' : '') +
+        '<p class="client-note">Chaque étape part du bâtiment déjà amélioré : les gains ne s’additionnent pas, ils se suivent.</p>' +
+        (radiateurs(b) ? '<p>' + esc(radiateurs(b)) + '</p>' : '') + '</section>' : '') +
 
       '<section class="client-section"><h2>Prochaines étapes</h2><ol class="client-etapes">' +
       '<li><b>Une visite</b> pour vérifier ' + esc(liste(aVerifier(r)) || 'les points clés') + '.</li>' +
       (r.calage.actif ? '<li><b>Vos factures</b> ont servi à caler l’estimation : merci.</li>' :
         '<li><b>Vos factures</b> des trois dernières années, pour caler l’estimation.</li>') +
-      '<li><b>Les aides</b> : ' + esc(aides(r)) + '. Les montants dépendent de votre situation.</li>' +
+      '<li><b>Les aides</b> : ' + esc(aides(r)) + '. Les montants dépendent de votre situation' +
+        (r.aides ? ' ; les coûts ci-dessus en déduisent une estimation de ' + esc(F.pct(r.aides)) + ', à confirmer' : '') + '.</li>' +
+      obligations(r) +
       '<li><b>Des devis</b> pour les travaux retenus.</li></ol></section>' +
 
       '<footer class="client-pied">Estimation réalisée avec Audit flash : déperditions paroi par paroi, méthode des degrés-jours, rendements des équipements. ' +
@@ -177,8 +201,8 @@
     const b = bouquetChoisi(r, c.bouquet);
     const ligneAction = function (a) {
       return '• ' + a.def.nom + ' : ≈ ' + F.euros(a.economie, 2) + ' d’économies par an' + (a.revente > 0 ? ' (vente du surplus comprise)' : '') +
-        ', pour ' + F.plageEuros(a.cout.bas, a.cout.haut) +
-        ' TTC (hors aides), remboursé en ' + F.plageAns(a.trbBas, a.trbHaut) + '.';
+        ', pour ' + F.plageEuros(a.cout.net.bas, a.cout.net.haut) +
+        ' TTC (' + (a.cout.aide ? 'aides estimées déduites' : 'hors aides') + '), remboursé en ' + F.plageAns(a.trbBas, a.trbHaut) + '.';
     };
     const lignes = [
       'Bonjour,',
@@ -199,12 +223,18 @@
     }
     if (b && b.etapes.length > 1) {
       lignes.push('En enchaînant ces travaux (' + liste(b.etapes.map(function (e) { return e.nom.toLowerCase(); })) + ') : environ − ' + F.pct(b.gainPart) + ' d’énergie et ≈ ' + F.euros(b.economie, 2) +
-        ' d’économies par an, pour ' + F.plageEuros(b.cout.bas, b.cout.haut) + ' TTC hors aides.');
+        ' d’économies par an, pour ' + F.plageEuros(b.cout.net.bas, b.cout.net.haut) + ' TTC ' + (b.cout.aide ? 'après aides estimées.' : 'hors aides.'));
       lignes.push('');
     }
+    if (radiateurs(b)) { lignes.push(radiateurs(b)); lignes.push(''); }
     lignes.push('Il s’agit d’un pré-diagnostic (ordre de grandeur), pas d’un audit réglementaire : une visite permettra de confirmer ces chiffres' +
       (r.calage.actif ? '.' : ', et vos factures des trois dernières années de les caler.'));
-    lignes.push('Aides possibles : ' + aides(r) + '.');
+    lignes.push('Aides possibles : ' + aides(r) + '.' + (r.aides ? ' Les coûts indiqués en déduisent une estimation de ' + F.pct(r.aides) + ', à confirmer.' : ''));
+    (r.alertes || []).forEach(function (al) {
+      lignes.push(al.id === 'tertiaire' ?
+        'Décret tertiaire : la consommation doit baisser de 40 % d’ici 2030 (50 % en 2040, 60 % en 2050) par rapport à une année de référence.' :
+        'Décret BACS : au-delà de ' + al.seuil + ' kW de chauffage, un système de gestion technique (GTB) ' + (al.certain ? 'est' : 'peut être') + ' obligatoire.');
+    });
     lignes.push('');
     lignes.push('Bien cordialement,');
     if (c.preparePar) lignes.push(c.preparePar);

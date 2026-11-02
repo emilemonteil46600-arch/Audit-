@@ -13,6 +13,9 @@ en fourchette et les travaux qui valent le coup (✅ à faire / 🟠 à discuter
 - **Vue client** : une page simple à montrer ou à imprimer en PDF, et un texte prêt pour un mail.
 - **Photovoltaïque** : orientation du toit lue sur la carte, taille des panneaux à la meilleure rentabilité,
   part consommée sur place et vente du surplus.
+- **Maj + clic** sur la carte : plusieurs bâtiments comptés comme un seul (école + extension). Mitoyenneté selon la
+  hauteur du voisin, altitude, ombres des voisins sur le toit.
+- Aides estimées (en %), alertes **décret tertiaire** et **BACS**, sauvegarde de tes réglages (onglet Données).
 
 ## Vérifier
 

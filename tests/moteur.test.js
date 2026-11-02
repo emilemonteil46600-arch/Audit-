@@ -333,3 +333,64 @@ test('Photovoltaïque : calage sur factures, logement collectif, bureaux', funct
   const apres = bureaux.bouquets.find(function (x) { return x.ids.indexOf('pv') >= 0; }).apres;
   assert.ok(apres.parts.pv === undefined && proche(somme(apres.parts), 1, 1e-9));
 });
+
+test('Façades selon la hauteur des voisins, altitude, ombres, aides, réglementation', function () {
+  const c = function (v) { return { valeur: v, origine: 'carte' }; };
+  // Périmètre de façade lu sur la carte : façades = P façade × hauteur ; L ponts = P façade × (niveaux + 1)
+  const r = M.diagnostiquer(entreesExemple({ perimetreFacade: c(30) }), {}, H);
+  assert.ok(proche(r.modele.geometrie.facades, 90, 1e-9));
+  assert.ok(proche(r.modele.geometrie.lPonts, 60, 1e-9));
+  assert.ok(proche(r.modele.geometrie.partMitoyenne, 0.25, 1e-9));
+  // Altitude : Lyon (H1c, référence 250 m), 650 m → 2 650 + 120 × 4 = 3 130 DJU, T base − 12,4 °C
+  const alt = M.diagnostiquer(Object.assign({}, H.BATIMENTS_TYPES[1].entrees, { altitude: c(650) }), {}, H);
+  assert.ok(proche(alt.params.dju, 3130, 1e-9));
+  assert.ok(proche(alt.params.tbase, -12.4, 1e-9));
+  // Ombres : voisin plein sud vu à 28,8° → 0,02 × 18,8 = 37,6 % de perte sur le pan sud, qui n'est plus équipé
+  assert.ok(proche(M.perteOmbre(180, [{ azimut: 180, angle: 28.8 }], D()), 0.376, 1e-9));
+  assert.equal(M.perteOmbre(180, [{ azimut: 0, angle: 40 }], D()), 0);
+  const ombre = M.diagnostiquer(entreesExemple({ orientationFaitage: c(90), masques: c([{ azimut: 180, angle: 28.8 }]) }), {}, H);
+  assert.equal(ombre.params.pvToiture.pans.find(function (p) { return p.nom === 'sud'; }).equipe, false);
+  assert.equal(ombre.actions.find(function (a) { return a.id === 'pv'; }).etat.etat, 'sansObjet');
+  // Aides de 30 % : coût brut inchangé, temps de retour sur le coût net ; l'ITE passe de 🟠 à ✅
+  const sans = M.diagnostiquer(entreesExemple(), {}, H), avec = M.diagnostiquer(entreesExemple(), {}, H, {}, { aides: 0.3 });
+  const ite0 = sans.actions.find(function (a) { return a.id === 'ite'; }), ite = avec.actions.find(function (a) { return a.id === 'ite'; });
+  assert.ok(proche(ite.cout.bas, ite0.cout.bas, 1e-9));
+  assert.ok(proche(ite.cout.net.moyen, ite0.cout.moyen * 0.7, 1e-9));
+  assert.ok(proche(ite.trb, ite0.trb * 0.7, 1e-9));
+  assert.equal(ite0.verdict, 'discuter');
+  assert.equal(ite.verdict, 'afaire');
+  // Réglementation : la maison n'a pas d'alerte ; les bureaux de 3 000 m² ont le décret tertiaire et le BACS (≈ 128 kW > 70 kW)
+  assert.deepEqual(sans.alertes, []);
+  const bureaux = M.diagnostiquer(H.BATIMENTS_TYPES[2].entrees, {}, H);
+  const tertiaire = bureaux.alertes.find(function (a) { return a.id === 'tertiaire'; });
+  assert.deepEqual(tertiaire.objectifs.map(function (o) { return o.annee; }), [2030, 2040, 2050]);
+  assert.ok(proche(tertiaire.objectifs[0].cible, bureaux.resultat.total.ef * 0.6, 1e-6));
+  const bacs = bureaux.alertes.find(function (a) { return a.id === 'bacs'; });
+  assert.equal(bacs.seuil, 70);
+  assert.equal(bacs.certain, bureaux.modele.puissance > 70);
+});
+
+test('Radiateurs et PAC, eau chaude électrique au soleil, métrés pour la STD', function () {
+  const d = D();
+  // T = 19 + 41 × (H après / H avant)^(1/1,3) : 508,6 → 200 W/K ≈ 39 °C, compatible ; PAC seule 60 °C, non
+  const e = M.emetteurs(508.6, 200, { ti: 19 }, d);
+  assert.ok(proche(e.temperature, 19 + 41 * Math.pow(200 / 508.6, 1 / 1.3), 1e-9));
+  assert.ok(e.temperature > 38 && e.temperature < 40 && e.compatible);
+  const r = M.diagnostiquer(H.BATIMENTS_TYPES[0].entrees, {}, H);
+  assert.deepEqual(r.actions.find(function (a) { return a.id === 'pac-air-eau'; }).details.emetteurs, { ratio: 1, temperature: 60, compatible: false });
+  const conseille = r.bouquets.find(function (b) { return b.id === 'conseille'; });
+  assert.ok(conseille.emetteurs.compatible && conseille.emetteurs.ratio < 0.7);
+  // Ballon électrique : sur place = 0,35 × (élec hors eau chaude) + 0,6 × eau chaude électrique
+  const ballon = M.diagnostiquer(Object.assign({}, H.BATIMENTS_TYPES[0].entrees, { ecs: { valeur: 'ballon-electrique', origine: 'saisie' } }), {}, H);
+  const pv = ballon.actions.find(function (a) { return a.id === 'pv'; }).pv;
+  assert.ok(proche(pv.autoconsommation, Math.min(0.9 * pv.production, 0.35 * pv.horsEcs + 0.6 * pv.ecsElectrique), 1e-9));
+  assert.ok(proche(pv.horsEcs, 2800, 1e-9));
+  // Métrés : sans carte, le total seulement ; avec les orientations, façades réparties au prorata
+  assert.equal(r.metres.orientations, null);
+  assert.ok(proche(r.metres.total.facade, 120, 1e-9) && proche(r.metres.total.vitrages, 18, 1e-9));
+  assert.deepEqual(r.metres.ponts, { plancherBas: 40, intermediaires: 0, toiture: 40 });
+  const orient = { valeur: { N: { facade: 30, longueur: 10 }, S: { facade: 30, longueur: 10 }, E: { facade: 30, longueur: 10 }, O: { facade: 30, longueur: 10 } }, origine: 'carte' };
+  const m = M.diagnostiquer(Object.assign({}, H.BATIMENTS_TYPES[0].entrees, { orientations: orient }), {}, H).metres;
+  assert.deepEqual(m.orientations.map(function (o) { return o.orientation; }), ['N', 'E', 'S', 'O']);
+  m.orientations.forEach(function (o) { assert.ok(proche(o.facade, 30, 1e-9) && proche(o.vitrages, 4.5, 1e-9)); });
+});

@@ -44,6 +44,12 @@
       source: "Convention de l'outil (H) : 0,1 ≈ un rectangle 1,2 fois plus long que large ; en dessous (bâtiment presque carré, en L), l'orientation du toit est supposée inconnue",
       date: '2026-11-01', statut: 'exemple'
     },
+    rayonMasques: {
+      valeur: 80, unite: 'm',
+      libelle: 'Distance maximale des voisins qui peuvent faire de l’ombre sur le toit (panneaux photovoltaïques)',
+      source: "Convention de l'outil (H) : au-delà, un voisin plus haut fait une ombre faible (hauteur angulaire < 10° pour 14 m de plus)",
+      date: '2026-11-02', statut: 'exemple'
+    },
     rayonDpe: {
       valeur: 20, unite: 'm',
       libelle: "Un DPE sert à pré-remplir (année, énergie) s'il est à moins de cette distance du bâtiment",
