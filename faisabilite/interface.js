@@ -8,7 +8,7 @@
 (function () {
   'use strict';
 
-  const C = window.FaisabiliteCalcul;
+  const C = window.CarteCalcul;
   const V = window.VALEURS_FLASH;
   const SERVICES = window.SERVICES_FLASH;
   const F = window.FLASH;
