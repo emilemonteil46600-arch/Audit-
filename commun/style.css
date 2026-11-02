@@ -827,3 +827,14 @@ a.outil:hover { border-color: var(--accent); transform: translateY(-2px); }
 .trajectoire em.ok { color: var(--ok); background: var(--ok-doux); }
 .trajectoire em.ko { color: var(--danger); background: var(--surface); }
 @media (max-width: 520px) { .trajectoire li { grid-template-columns: 44px minmax(0, 1fr); } .trajectoire em { grid-column: 2; justify-self: start; } }
+.badge-emetteurs { display: flex; gap: 8px; align-items: flex-start; margin: 8px 0 0; padding: 8px 10px; border-radius: 10px; font-size: .8rem; }
+.badge-emetteurs.ok { background: var(--ok-doux); color: var(--ok); }
+.badge-emetteurs.ko { background: var(--surface-2); color: var(--alerte); }
+.badge-emetteurs small { color: var(--encre-3); }
+.section-metres summary { cursor: pointer; list-style: none; }
+.section-metres summary h2 { display: inline-flex; align-items: center; gap: 8px; margin: 0; font-size: 1.1rem; }
+.section-metres summary h2 .ico { color: var(--accent); }
+.metres { width: 100%; border-collapse: collapse; margin: 10px 0; font-size: .82rem; }
+.metres th, .metres td { padding: 5px 8px; border-bottom: 1px solid var(--bord); text-align: left; }
+.metres td.num, .metres th + th { text-align: right; font-variant-numeric: tabular-nums; }
+.section-metres { overflow-x: auto; }

@@ -328,6 +328,7 @@
       origineNiveaux: plusieurs ? 'ensemble' : est.origineNiveaux, surfacePlancher: plusieurs ? surf.surfacePlancher : est.surfacePlancher,
       orientationFaitage: faitage ? faitage.angle : null,
       masques: C.masquesSolaires(p.contour, p.lu.hauteur || p.h, voisins, R, V.rayonMasques.valeur),
+      orientations: C.facadesParOrientation(ens.cotes),
       altitude: p.altitude, bdtopo: p.lu, adresse: adresse
     });
   }

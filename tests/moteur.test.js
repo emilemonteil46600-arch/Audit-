@@ -369,3 +369,28 @@ test('Façades selon la hauteur des voisins, altitude, ombres, aides, réglement
   assert.equal(bacs.seuil, 70);
   assert.equal(bacs.certain, bureaux.modele.puissance > 70);
 });
+
+test('Radiateurs et PAC, eau chaude électrique au soleil, métrés pour la STD', function () {
+  const d = D();
+  // T = 19 + 41 × (H après / H avant)^(1/1,3) : 508,6 → 200 W/K ≈ 39 °C, compatible ; PAC seule 60 °C, non
+  const e = M.emetteurs(508.6, 200, { ti: 19 }, d);
+  assert.ok(proche(e.temperature, 19 + 41 * Math.pow(200 / 508.6, 1 / 1.3), 1e-9));
+  assert.ok(e.temperature > 38 && e.temperature < 40 && e.compatible);
+  const r = M.diagnostiquer(H.BATIMENTS_TYPES[0].entrees, {}, H);
+  assert.deepEqual(r.actions.find(function (a) { return a.id === 'pac-air-eau'; }).details.emetteurs, { ratio: 1, temperature: 60, compatible: false });
+  const conseille = r.bouquets.find(function (b) { return b.id === 'conseille'; });
+  assert.ok(conseille.emetteurs.compatible && conseille.emetteurs.ratio < 0.7);
+  // Ballon électrique : sur place = 0,35 × (élec hors eau chaude) + 0,6 × eau chaude électrique
+  const ballon = M.diagnostiquer(Object.assign({}, H.BATIMENTS_TYPES[0].entrees, { ecs: { valeur: 'ballon-electrique', origine: 'saisie' } }), {}, H);
+  const pv = ballon.actions.find(function (a) { return a.id === 'pv'; }).pv;
+  assert.ok(proche(pv.autoconsommation, Math.min(0.9 * pv.production, 0.35 * pv.horsEcs + 0.6 * pv.ecsElectrique), 1e-9));
+  assert.ok(proche(pv.horsEcs, 2800, 1e-9));
+  // Métrés : sans carte, le total seulement ; avec les orientations, façades réparties au prorata
+  assert.equal(r.metres.orientations, null);
+  assert.ok(proche(r.metres.total.facade, 120, 1e-9) && proche(r.metres.total.vitrages, 18, 1e-9));
+  assert.deepEqual(r.metres.ponts, { plancherBas: 40, intermediaires: 0, toiture: 40 });
+  const orient = { valeur: { N: { facade: 30, longueur: 10 }, S: { facade: 30, longueur: 10 }, E: { facade: 30, longueur: 10 }, O: { facade: 30, longueur: 10 } }, origine: 'carte' };
+  const m = M.diagnostiquer(Object.assign({}, H.BATIMENTS_TYPES[0].entrees, { orientations: orient }), {}, H).metres;
+  assert.deepEqual(m.orientations.map(function (o) { return o.orientation; }), ['N', 'E', 'S', 'O']);
+  m.orientations.forEach(function (o) { assert.ok(proche(o.facade, 30, 1e-9) && proche(o.vitrages, 4.5, 1e-9)); });
+});

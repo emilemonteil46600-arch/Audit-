@@ -564,6 +564,7 @@
     ['pv.densite', 'Puissance par m² de module (≈ 420 Wc pour 2 m²)', 0.2, 'kWc/m²'],
     ['pv.partJour.logement', 'Part de l’électricité (hors chauffage) consommée quand il y a du soleil — logement', 0.35, '–'],
     ['pv.partJour.tertiaire', 'Part de l’électricité (hors chauffage) consommée quand il y a du soleil — tertiaire', 0.6, '–'],
+    ['pv.partJour.ecs', 'Part de l’eau chaude électrique produite quand il y a du soleil (ballon programmé sur les heures solaires)', 0.6, '–'],
     ['pv.tauxMax', 'Part maximale de la production consommée sur place', 0.9, '–'],
     ['pv.tailleMin', 'Plus petite installation proposée (taille courante en résidentiel)', 3, 'kWc'],
     ['pv.taille.moyenne', 'Taille courante en résidentiel — moyenne', 6, 'kWc'],
@@ -578,6 +579,13 @@
   ]);
   groupe('Photovoltaïque', "TVA de 20 % par défaut ; des taux réduits existent pour certaines petites installations résidentielles, à vérifier (H)", 'exemple', [
     ['eco.tva.pv', 'TVA des panneaux photovoltaïques', 0.2, '–']
+  ]);
+
+  // Radiateurs existants et pompe à chaleur : quelle température d'eau faut-il après travaux ?
+  groupe('Émetteurs', "Puissance d'un radiateur ∝ (T eau moyenne − T ambiante)^n, n ≈ 1,3 pour les radiateurs (NF EN 442). Régime d'origine supposé 70/50 °C, soit 60 °C d'eau en moyenne ; une PAC air/eau reste performante jusqu'à environ 50 °C d'eau en moyenne (H, à vérifier sur la fiche de la PAC)", 'exemple', [
+    ['emetteur.eauNominale', 'Température moyenne de l’eau pour laquelle les radiateurs ont été choisis', 60, '°C'],
+    ['emetteur.exposant', 'Exposant n des radiateurs', 1.3, '–'],
+    ['emetteur.eauMaxPac', 'Température moyenne d’eau maximale pour une PAC basse température', 50, '°C']
   ]);
 
   // Réglementation tertiaire : alertes automatiques (pas de chiffrage).

@@ -209,3 +209,19 @@ test('Ombres : voisin de 20 m au sud à 20 m d’un bâtiment de 9 m → 28,8° 
   assert.equal(C.altitudeBatiment({}, { type: 'Polygon', coordinates: [[[1, 43, 100], [1.1, 43, 110], [1, 43.1, 120]]] }), 110);
   assert.equal(C.altitudeBatiment({}, { type: 'Polygon', coordinates: [[[1, 43], [1.1, 43], [1, 43.1]]] }), null);
 });
+
+test('Façades par orientation : rectangle 20 m est-ouest × 12 m, 9,5 m → N 190, S 190, E 114, O 114 m² (dans les deux sens de parcours)', function () {
+  const lat = 43.6;
+  const pt = function (x, y) { return [1.44 + x / R * 180 / Math.PI / Math.cos(lat * Math.PI / 180), lat + y / R * 180 / Math.PI]; };
+  const rect = [pt(-10, -6), pt(10, -6), pt(10, 6), pt(-10, 6), pt(-10, -6)];
+  [rect, rect.slice().reverse()].forEach(function (anneau) {
+    const o = C.facadesParOrientation(C.analyserEnsemble([{ contour: anneau, hauteur: 9.5 }], [], R, 1).cotes);
+    assert.ok(proche(o.N.facade, 190, 0.01) && proche(o.S.facade, 190, 0.01));
+    assert.ok(proche(o.E.facade, 114, 0.01) && proche(o.O.facade, 114, 0.01));
+    assert.ok(proche(o.S.longueur, 20, 0.01));
+  });
+  // Collé à l'est à un voisin plus haut : plus de façade à l'est
+  const voisin = [pt(10, -6), pt(24, -6), pt(24, 6), pt(10, 6), pt(10, -6)];
+  const o = C.facadesParOrientation(C.analyserEnsemble([{ contour: rect, hauteur: 9.5 }], [{ contour: voisin, hauteur: 12 }], R, 1).cotes);
+  assert.equal(o.E, undefined);
+});

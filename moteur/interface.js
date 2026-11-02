@@ -495,11 +495,22 @@
     const essais = a.details ? a.details.candidats.map(function (c) { return kwc(c.kwc); }).join(', ') : kwc(pv.kwc);
     return 'Toit : ' + texteToit(p) + ' → ' + kwc(p.pvMax) + ' posables ; essayé : ' + essais + ' → ' + kwc(pv.kwc) + ' (meilleure VAN)\n' +
       'Production : ' + kwc(pv.kwc) + ' × ' + nb(pv.productible) + ' kWh/kWc (zone ' + p.zone + ') × ' + pct(pv.facteur) + ' = ' + kwh3(pv.production) + '/an\n' +
-      'Sur place : min(' + pct(pv.tauxMax) + ' × ' + kwh3(pv.production) + ' ; ' + pct(pv.partJour) + ' × ' + kwh3(pv.horsChauffage) +
-      (p.pvServicesGeneraux ? ' des services généraux' : ' d’électricité hors chauffage') + ') = ' + kwh3(pv.autoconsommation) +
+      'Sur place : min(' + pct(pv.tauxMax) + ' × ' + kwh3(pv.production) + ' ; ' +
+      (pv.ecsElectrique > 0 ? pct(pv.partJour) + ' × ' + kwh3(pv.horsEcs) + ' + ' + pct(pv.partJourEcs) + ' × ' + kwh3(pv.ecsElectrique) + ' d’eau chaude électrique' :
+        pct(pv.partJour) + ' × ' + kwh3(pv.horsChauffage) + (p.pvServicesGeneraux ? ' des services généraux' : ' d’électricité hors chauffage')) +
+      ') = ' + kwh3(pv.autoconsommation) +
       ' → ' + euros(a.economieFacture) + '/an\n' +
       'Vendu : ' + kwh3(pv.surplus) + ' × ' + nb(pv.tarif, 2) + ' €/kWh = ' + euros(a.revente) + '/an (tarif fixe : ne suit pas la hausse des prix)\n' +
       'Économie : ' + euros(a.economie) + '/an (année 1)\n';
+  }
+
+  // Radiateurs existants et PAC basse température (point 15 du moteur) : mise en forme seulement.
+  function badgeEmetteurs(e, seule) {
+    return '<p class="badge-emetteurs ' + (e.compatible ? 'ok' : 'ko') + '">' + ico(e.compatible ? 'check' : 'alerte') + '<span>' +
+      (e.compatible ? '<b>Radiateurs existants compatibles PAC basse température</b> : une eau à ≈ ' + nb(e.temperature) + ' °C suffit après travaux.' :
+        '<b>Radiateurs existants : eau à ≈ ' + nb(e.temperature) + ' °C</b>' + (seule ? ' sans isolation' : '') +
+        ' → PAC haute température, ou isoler d’abord / changer les radiateurs les plus petits.') +
+      ' <small>(H : radiateurs choisis pour 60 °C d’eau en moyenne)</small></span></p>';
   }
 
   function carteAction(a, variante) {
@@ -522,6 +533,7 @@
       '<div><dt>Retour actualisé</dt><dd>' + ans(a.tra) + '</dd></div></dl>' +
       G.retour(a.tra, a.duree, seuil) +
       '<p class="action-note">' + esc(a.def.note || '') + '</p>' +
+      (a.details && a.details.emetteurs ? badgeEmetteurs(a.details.emetteurs, true) : '') +
       (variante ? '<p class="mini">Variante : le bouquet retient l’autre solution de cette famille (meilleure VAN).</p>' : '') +
       '<details class="action-detail"><summary>Détail du calcul</summary><div class="formule">' + esc(detailCalcul(a)) + '</div>' +
       '<div class="tres-legende">Trésorerie actualisée sur la durée de vie</div>' + G.tresorerie(a.tresorerie) + '</details></article>';
@@ -579,7 +591,7 @@
       '<p class="aide">Chaque action part du bâtiment déjà amélioré par les précédentes : c’est pour ça que les gains ne s’additionnent pas.' +
       (pacBouquet && pacSeule ? ' La pompe à chaleur est dimensionnée après l’isolation : ' +
         nb(pacBouquet.cout.quantite.valeur, 1) + ' kW au lieu de ' + nb(pacSeule.cout.quantite.valeur, 1) + ' kW.' : '') +
-      '</p></div>' +
+      '</p>' + (choisi.emetteurs && pacBouquet ? badgeEmetteurs(choisi.emetteurs, false) : '') + '</div>' +
       (logement ? '<div class="bloc-etiquette"><h3>Étiquette énergie indicative</h3>' + G.etiquette(seuils,
         { classe: choisi.avant.etiquette.energie, texte: 'avant ' + nb(sig(choisi.avant.ratios.ep5, 2)) },
         { classe: choisi.apres.etiquette.energie, texte: 'après ' + nb(sig(choisi.apres.ratios.ep5, 2)) }) +
@@ -619,6 +631,33 @@
       '<p class="aide">Seuils repris de mémoire (onglet Données, groupe Réglementation) : à vérifier.</p></section>';
   }
 
+  // Métrés pour un logiciel de STD (point 16 du moteur) : tableau + copie pour Excel ou Pléiades.
+  function tableMetres() {
+    const m = r.metres;
+    const ligne = function (c, th) { return '<tr>' + c.map(function (x, i) { const t = th ? 'th' : 'td'; return '<' + t + (i && !th ? ' class="num"' : '') + '>' + x + '</' + t + '>'; }).join('') + '</tr>'; };
+    const m2 = function (v) { return nb(v, 1); };
+    let h = '<table class="metres"><thead>' + ligne(['Orientation', 'Longueur (m)', 'Façade (m²)', 'Vitrages (m²)', 'Murs (m²)'], true) + '</thead><tbody>';
+    if (m.orientations) h += m.orientations.map(function (o) { return ligne([o.orientation, m2(o.longueur), m2(o.facade), m2(o.vitrages), m2(o.murs)]); }).join('');
+    h += ligne(['<b>Total</b>', '', '<b>' + m2(m.total.facade) + '</b>', '<b>' + m2(m.total.vitrages) + '</b>', '<b>' + m2(m.total.murs) + '</b>']) + '</tbody></table>';
+    h += '<table class="metres"><tbody>' +
+      ligne(['Toiture (' + esc(m.toitureType) + ')', m2(m.toiture) + ' m²']) +
+      ligne(['Plancher bas (' + esc(m.plancherType) + ')', m2(m.plancher) + ' m²']) +
+      ligne(['Surface chauffée · volume chauffé', m2(m.surfaceChauffee) + ' m² · ' + m2(m.volume) + ' m³']) +
+      ligne(['Niveaux · hauteur · hauteur sous plafond', nb(m.niveaux) + ' · ' + m2(m.hauteur) + ' m · ' + m2(m.hsp) + ' m']) +
+      ligne(['Pont thermique plancher bas / mur', m2(m.ponts.plancherBas) + ' m']) +
+      ligne(['Ponts thermiques planchers intermédiaires / mur', m2(m.ponts.intermediaires) + ' m']) +
+      ligne(['Pont thermique toiture / mur', m2(m.ponts.toiture) + ' m']) + '</tbody></table>';
+    return h;
+  }
+
+  function metresSection() {
+    return '<details class="bloc section-metres"><summary><h2>' + ico('plan') + 'Métrés pour Pléiades (ou un autre logiciel de STD)</h2></summary>' +
+      '<p class="aide">Façades exposées ' + (r.metres.orientations ? 'par orientation (normale extérieure de chaque côté du contour)' : 'au total (choisis le bâtiment sur la carte pour avoir les orientations)') +
+      '. Vitrages = ' + pct(r.metres.tauxVitrage) + ' de chaque façade (H : la même part partout, à corriger en visite). Murs mitoyens déjà retirés.</p>' +
+      tableMetres() +
+      '<div class="barre-boutons"><button type="button" class="bouton" data-action="copier-metres">' + ico('copie') + 'Copier pour Excel</button></div></details>';
+  }
+
   function visite() {
     const items = r.incertitude.contributions.filter(function (c) { return c.origine !== 'saisie'; }).slice(0, 5);
     return '<section class="bloc section-visite"><div class="section-tete"><h2>' + ico('loupe') + 'Pour préparer la visite</h2></div>' +
@@ -644,7 +683,7 @@
     el.innerHTML = '<div class="res-tete"><h2>Résultat</h2><span class="badge ' + (r.calage.actif ? 'valide' : 'info') + '">' +
       (r.calage.actif ? 'Calé sur tes factures' : 'Sans factures : estimation') + '</span>' +
       '<span class="res-fiab">' + G.fiabilite(r.fiabilite) + ' Fiabilité ' + esc(r.fiabilite) + ' (± ' + pct(r.rel) + ')</span></div>' +
-      kpis() + graphes() + reglementation() + preconisations() + bouquets() + visite() + avertissements();
+      kpis() + graphes() + reglementation() + preconisations() + bouquets() + visite() + metresSection() + avertissements();
   }
 
   /* ---------- Fiche d'une page pour Word ---------- */
@@ -706,6 +745,7 @@
       (choisi ? '<h2>Bouquet « ' + esc(choisi.nom) + ' »</h2><p>' + choisi.etapes.map(function (e) { return esc(e.nom); }).join(' → ') +
         ' : − ' + nb(choisi.gainPart * 100) + ' % d’énergie, ≈ ' + euros(choisi.economie, 2) + '/an, coût ≈ ' + euros(choisi.cout.moyen, 2) + ' TTC, retour ' +
         ans(choisi.trb) + ' brut / ' + ans(choisi.tra) + ' actualisé' + (et ? ', étiquette ' + choisi.avant.etiquette.classe + ' → ' + choisi.apres.etiquette.classe : '') + '.</p>' : '') +
+      '<h2>Métrés</h2>' + tableMetres() +
       '<h2>À vérifier en visite</h2><p>' + r.incertitude.contributions.filter(function (c) { return c.origine !== 'saisie'; }).slice(0, 4)
         .map(function (c) { return '<b>' + esc(c.nom) + '</b> : ' + esc(c.visite); }).join('<br>') + '</p>' +
       '<p class="petit">Hypothèses : ' + r.exemples.length + ' valeurs d’exemple (prix de l’énergie, coûts, valeurs par défaut de l’époque) à confirmer. ' +
@@ -1045,6 +1085,7 @@
     if (b.nombre > 1) mettre('surfacePlancher', b.surfacePlancher); // plusieurs bâtiments : somme des planchers
     mettre('altitude', b.altitude);
     if (b.masques && b.masques.length) mettre('masques', b.masques);
+    if (b.orientations && Object.keys(b.orientations).length) mettre('orientations', b.orientations);
     mettre('hauteur', b.hauteur);
     mettre('niveaux', b.niveaux);
     mettre('orientationFaitage', b.orientationFaitage);
@@ -1218,6 +1259,14 @@
       else if (action === 'sans-carte') { ouvrirPanneau('batiment'); $('#b-saisie').open = true; $('[data-saisie="surfacePlancher"]').focus(); }
       else if (action === 'telecharger-fiche') telechargerFiche();
       else if (action === 'copier-fiche') copierFiche();
+      else if (action === 'copier-metres') {
+        const html = tableMetres(), z = document.createElement('div');
+        z.innerHTML = html;
+        const texte = Array.from(z.querySelectorAll('tr')).map(function (tr) {
+          return Array.from(tr.children).map(function (c) { return c.textContent.trim(); }).join('\t');
+        }).join('\n');
+        F.copierHtml(html, texte).then(function (ok) { F.toast(ok ? 'Métrés copiés : colle-les dans Excel.' : 'Copie impossible : sélectionne le tableau à la main.'); });
+      }
       else if (action === 'garder-cas') garderCas();
       else if (action === 'imprimer') window.print();
       else if (action === 'copier-mail') copierMail();

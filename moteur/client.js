@@ -107,6 +107,14 @@
     }).join('');
   }
 
+  // Radiateurs existants et pompe à chaleur, en une phrase (seulement si le programme contient une PAC air/eau).
+  function radiateurs(b) {
+    if (!b || !b.emetteurs || b.ids.indexOf('pac-air-eau') < 0) return '';
+    return b.emetteurs.compatible ?
+      'Après l’isolation, vos radiateurs actuels devraient suffire avec une pompe à chaleur basse température (eau à environ ' + F.nombre(b.emetteurs.temperature) + ' °C) : pas besoin de les changer (à confirmer en visite).' :
+      'Vos radiateurs actuels demanderaient une eau à environ ' + F.nombre(b.emetteurs.temperature) + ' °C : il faudra une pompe à chaleur haute température ou remplacer certains radiateurs.';
+  }
+
   function liste(mots) {
     return mots.length <= 1 ? mots.join('') : mots.slice(0, -1).join(', ') + ' et ' + mots[mots.length - 1];
   }
@@ -168,7 +176,8 @@
         (b.cout.aide ? 'après aides estimées.' : 'hors aides.') +
         (et ? ' Étiquette indicative : <b>' + b.avant.etiquette.classe + ' → ' + b.apres.etiquette.classe + '</b>.' : '') + '</p>' +
         G.cascade(b.avant.total.ef, b.etapes.map(function (e) { return { nom: e.nom, icone: e.icone, avant: e.efAvant, apres: e.efApres }; }), b.apres.total.ef, F.energie) +
-        '<p class="client-note">Chaque étape part du bâtiment déjà amélioré : les gains ne s’additionnent pas, ils se suivent.</p></section>' : '') +
+        '<p class="client-note">Chaque étape part du bâtiment déjà amélioré : les gains ne s’additionnent pas, ils se suivent.</p>' +
+        (radiateurs(b) ? '<p>' + esc(radiateurs(b)) + '</p>' : '') + '</section>' : '') +
 
       '<section class="client-section"><h2>Prochaines étapes</h2><ol class="client-etapes">' +
       '<li><b>Une visite</b> pour vérifier ' + esc(liste(aVerifier(r)) || 'les points clés') + '.</li>' +
@@ -217,6 +226,7 @@
         ' d’économies par an, pour ' + F.plageEuros(b.cout.net.bas, b.cout.net.haut) + ' TTC ' + (b.cout.aide ? 'après aides estimées.' : 'hors aides.'));
       lignes.push('');
     }
+    if (radiateurs(b)) { lignes.push(radiateurs(b)); lignes.push(''); }
     lignes.push('Il s’agit d’un pré-diagnostic (ordre de grandeur), pas d’un audit réglementaire : une visite permettra de confirmer ces chiffres' +
       (r.calage.actif ? '.' : ', et vos factures des trois dernières années de les caler.'));
     lignes.push('Aides possibles : ' + aides(r) + '.' + (r.aides ? ' Les coûts indiqués en déduisent une estimation de ' + F.pct(r.aides) + ', à confirmer.' : ''));

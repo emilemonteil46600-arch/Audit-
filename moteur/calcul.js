@@ -83,6 +83,8 @@
       Taille : on essaie 3, 6 et 9 kWc, la taille qui couvre juste la consommation de jour et le toit entier ;
       on garde la meilleure VAN. L'électricité consommée sur place est déduite de la facture, de l'énergie
       primaire et du CO₂ (pour l'étiquette : seulement la part qui couvre les 5 usages du DPE).
+      Eau chaude électrique : 60 % est produite au soleil (ballon programmé sur les heures solaires), au lieu de 35 % :
+        sur place = min(90 % × production ; 35 % × (élec hors chauffage − ECS) + 60 % × ECS électrique)
       Ombres des voisins (si la carte les donne) : pour chaque voisin plus haut, de hauteur angulaire α,
         perte = 0,02 × (α − 10°) × cos(direction du voisin − direction du pan), la plus forte des pertes, ≤ 60 %
         ex. voisin plein sud à 28,8° devant un pan sud : 0,02 × 18,8 ≈ 38 % de production en moins
@@ -91,6 +93,16 @@
       décret tertiaire si S plancher ≥ 1 000 m² : cibles − 40 % (2030), − 50 % (2040), − 60 % (2050) de la
         consommation actuelle (H : la vraie référence est une année ≥ 2010) et le premier bouquet qui les atteint ;
       décret BACS si la puissance estimée dépasse 70 kW (2027) ou 290 kW (2025) : GTB classe A ou B obligatoire.
+
+  15. Radiateurs existants et PAC (badge du bouquet) : un radiateur choisi pour H avant, à 60 °C d'eau en moyenne,
+      suffit après travaux avec une eau à  T = Ti + (60 − Ti) × (H après / H avant)^(1 / 1,3)
+      Compatible PAC basse température si T ≤ 50 °C (soit H après ≤ environ 0,7 × H avant).
+        ex. H 508,6 → 200 W/K : T = 19 + 41 × 0,393^0,77 ≈ 19 + 41 × 0,49 ≈ 39 °C → compatible
+
+  16. Métrés pour un logiciel de STD (Pléiades) : façades exposées par orientation (la carte donne la direction de la
+      normale extérieure de chaque côté), vitrages = façade × part vitrée (la même partout, H), murs = façade − vitrages ;
+      ponts thermiques : plancher bas / mur = périmètre exposé, planchers intermédiaires = P façade × (niveaux − 1),
+      toiture / mur = P façade.
 
    Exemple refait à la main : maison de plain-pied de 1970 à Toulouse (zone H2c, DJU 1 950),
    10 m × 10 m au sol, 3 m de haut, chaudière gaz ancienne ; tout le reste « je ne sais pas ».
@@ -179,6 +191,12 @@
       'bois-granules': 'granules',
       'reseau-chaleur': 'reseau'
     }[energie] || null;
+  }
+
+  // Façades par orientation lues sur la carte : { N: { facade, longueur }, NE: … } ou null.
+  function lireOrientations(e) {
+    if (!e || typeof e.valeur !== 'object' || Array.isArray(e.valeur)) return null;
+    return Object.keys(e.valeur).length ? e.valeur : null;
   }
 
   /* ---------- 2. Compléter les réponses ----------
@@ -388,7 +406,9 @@
       pvServicesGeneraux: usage === 'logement-collectif',
       pvProductible: D.v('pv.productible.' + zone),
       pvPartJour: D.v(logement ? 'pv.partJour.logement' : 'pv.partJour.tertiaire'),
-      pvTauxMax: D.v('pv.tauxMax'), tarifSurplus: D.v('pv.tarifSurplus')
+      pvPartJourEcs: D.v('pv.partJour.ecs'),
+      pvTauxMax: D.v('pv.tauxMax'), tarifSurplus: D.v('pv.tarifSurplus'),
+      orientations: lireOrientations(lire('orientations'))
     };
     return { params: params, origines: origines, manque: [] };
   }
@@ -510,6 +530,37 @@
     return { energie: energie, climat: climat, classe: energie > climat ? energie : climat };
   }
 
+  /* ---------- 3 ter. Radiateurs et PAC (point 15), métrés (point 16) ---------- */
+
+  // Température d'eau moyenne qui suffit aux radiateurs existants quand les déperditions passent de hAvant à hApres.
+  function emetteurs(hAvant, hApres, p, D) {
+    const ratio = hAvant > 0 ? hApres / hAvant : 1;
+    const temperature = p.ti + (D.v('emetteur.eauNominale') - p.ti) * Math.pow(ratio, 1 / D.v('emetteur.exposant'));
+    return { ratio: ratio, temperature: temperature, compatible: temperature <= D.v('emetteur.eauMaxPac') };
+  }
+
+  const ORIENTATIONS = ['N', 'NE', 'E', 'SE', 'S', 'SO', 'O', 'NO'];
+
+  // Métrés pour un logiciel de STD : par orientation si la carte la donne, sinon le total seulement.
+  function metres(p, r) {
+    const g = r.geometrie;
+    const pf = p.perimetreFacade === undefined ? p.perimetreExpose : p.perimetreFacade;
+    const o = p.orientations;
+    const totalCarte = o ? ORIENTATIONS.reduce(function (s, k) { return s + (o[k] ? o[k].facade : 0); }, 0) : 0;
+    const lignes = o && totalCarte > 0 ? ORIENTATIONS.filter(function (k) { return o[k] && o[k].facade > 0; }).map(function (k) {
+      const facade = g.facades * o[k].facade / totalCarte;
+      return { orientation: k, longueur: o[k].longueur, facade: facade, vitrages: facade * p.tauxVitrage, murs: facade * (1 - p.tauxVitrage) };
+    }) : null;
+    return {
+      orientations: lignes,
+      total: { facade: g.facades, vitrages: g.vitrages, murs: g.murs },
+      toiture: g.toiture, plancher: g.plancher, plancherType: p.plancherType, toitureType: p.toitureType,
+      surfaceChauffee: g.surfaceChauffee, volume: g.volume, hsp: p.hsp, niveaux: p.niveaux, hauteur: p.hauteur,
+      ponts: { plancherBas: p.perimetreExpose, intermediaires: pf * Math.max(0, p.niveaux - 1), toiture: pf },
+      tauxVitrage: p.tauxVitrage
+    };
+  }
+
   /* ---------- 3 bis. Photovoltaïque (point 13 en haut du fichier) ---------- */
 
   // Écart (0 à 180°) entre l'azimut d'un pan (0 = nord, 90 = est, 180 = sud, 270 = ouest) et le plein sud.
@@ -590,30 +641,38 @@
     if (!(p.pvKwc > 0)) return null;
     const facteur = facteurPose(p.pvToiture, p.pvKwc);
     return { kwc: p.pvKwc, facteur: facteur, productible: p.pvProductible, production: p.pvKwc * p.pvProductible * facteur,
-      partJour: p.pvPartJour, tauxMax: p.pvTauxMax, tarif: p.tarifSurplus, servicesGeneraux: p.pvServicesGeneraux };
+      partJour: p.pvPartJour, partJourEcs: p.pvPartJourEcs, tauxMax: p.pvTauxMax, tarif: p.tarifSurplus,
+      servicesGeneraux: p.pvServicesGeneraux };
   }
 
   // L'électricité que des panneaux peuvent couvrir : hors chauffage (l'hiver, peu de soleil), dont les 5 usages du DPE.
   // En logement collectif, seulement les services généraux (VMC, pompes) : l'électricité des logements est
   // payée par chaque occupant (H : une opération d'autoconsommation collective changerait cela).
   function electriciteHorsChauffage(usages, servicesGeneraux) {
-    const e = { total: 0, cinqUsages: 0 };
+    const e = { total: 0, cinqUsages: 0, ecs: 0 };
     usages.forEach(function (u) {
       if (u.energie !== 'electricite' || u.id === 'chauffage' || u.id === 'pv') return;
       if (servicesGeneraux && u.id !== 'auxiliaires') return;
       e.total += u.ef;
+      if (u.id === 'ecs') e.ecs += u.ef;
       if (u.id !== 'autres') e.cinqUsages += u.ef;
     });
     return e;
   }
 
+  // Électricité consommée quand il y a du soleil : part de jour du reste, part de jour de l'eau chaude électrique.
+  function consommationDeJour(e, partJour, partJourEcs) {
+    return partJour * (e.total - e.ecs) + partJourEcs * e.ecs;
+  }
+
   // Partage de la production entre ce qui est consommé sur place et ce qui part sur le réseau.
   function partagerPV(installation, usages) {
     const e = electriciteHorsChauffage(usages, installation.servicesGeneraux);
-    const autoconsommation = Math.min(installation.production * installation.tauxMax, installation.partJour * e.total);
+    const autoconsommation = Math.min(installation.production * installation.tauxMax,
+      consommationDeJour(e, installation.partJour, installation.partJourEcs));
     const surplus = installation.production - autoconsommation;
     return Object.assign({}, installation, {
-      horsChauffage: e.total, autoconsommation: autoconsommation, surplus: surplus, revenu: surplus * installation.tarif,
+      horsChauffage: e.total, ecsElectrique: e.ecs, horsEcs: e.total - e.ecs, autoconsommation: autoconsommation, surplus: surplus, revenu: surplus * installation.tarif,
       taux: installation.production > 0 ? autoconsommation / installation.production : 0,
       part5: e.total > 0 ? e.cinqUsages / e.total : 0
     });
@@ -892,6 +951,7 @@
           rendementChauffage: D.v('chauffage.pac-air-eau.rendement') });
       },
       quantite: function (p, r, D) { return { valeur: r.puissance * D.v('action.pac.surpuissance'), unite: 'kW' }; },
+      details: function (p, D) { return { emetteurs: emetteurs(1, 1, p, D) }; },
       note: 'Dimensionnée sur les déperditions APRÈS isolation (dans un bouquet) : isoler d’abord = PAC plus petite.' },
     { id: 'condensation', famille: 'chauffage', nom: 'Chaudière à condensation', icone: 'flamme', cout: 'cout.condensation', duree: 'duree.condensation',
       etat: function (p) {
@@ -981,7 +1041,7 @@
     const min = D.v('pv.tailleMin');
     const meilleur = p.pvToiture.pans.find(function (x) { return x.equipe; });
     const parKwc = meilleur ? p.pvProductible * meilleur.facteur : 0;
-    const jour = p.pvPartJour * electriciteHorsChauffage(base.usages, p.pvServicesGeneraux).total;
+    const jour = consommationDeJour(electriciteHorsChauffage(base.usages, p.pvServicesGeneraux), p.pvPartJour, p.pvPartJourEcs);
     const kwcJour = parKwc > 0 ? jour / (p.pvTauxMax * parKwc) : 0;
     const essais = [min, D.v('pv.taille.moyenne'), D.v('pv.taille.grande'), kwcJour, p.pvMax].filter(function (t, n, liste) {
       return t >= min && t <= p.pvMax && liste.slice(0, n).every(function (u) { return Math.abs(u - t) > 0.05; });
@@ -1075,7 +1135,8 @@
       trb: tempsRetourBrut(cout.net.moyen, economie),
       tra: tempsRetourActualise(cout.net.moyen, economie, i, a, D.v('eco.horizon'), revente),
       gainCo2: baseCal.total.co2 - finCal.total.co2,
-      puissanceApres: r.puissance
+      puissanceApres: r.puissance,
+      emetteurs: p0.hydraulique ? emetteurs(base.deperditions.total, r.deperditions.total, p0, D) : null
     };
   }
 
@@ -1137,7 +1198,7 @@
       fiabilite: niveauFiabilite(rel, D),
       calage: { actif: cale, coefs: coefs, sansModele: facturesSansModele(modele, factures), djuFactures: djuFactures, djuNormal: p.dju,
         ecartClimat: djuFactures ? djuFactures / p.dju - 1 : 0, modeleFactures: modeleFactures },
-      actions: evaluations, choix: choix, bouquets: bouquets, aides: D.aides,
+      actions: evaluations, choix: choix, bouquets: bouquets, aides: D.aides, metres: metres(p, modele),
       alertes: alertesReglementaires(p, modele, resultat, bouquets, D),
       exemples: valeursExemple(D)
     };
@@ -1251,7 +1312,7 @@
     completer, uTerrePlein, uPlancherEffectif, geometrie, deperditions, besoinChauffage, besoinEcs, systemeEcs,
     bilan, etiquetteDpe, calculer, FACTEURS, incertitude, niveauFiabilite,
     ecartAuSud, facteurOrientation, nomOrientation, toitureSolaire, facteurPose, installationPV, electriciteHorsChauffage,
-    partagerPV, dimensionnerPV, perteOmbre, alertesReglementaires,
+    partagerPV, dimensionnerPV, perteOmbre, alertesReglementaires, consommationDeJour, emetteurs, metres, ORIENTATIONS,
     coefficientsCalage, facturesSansModele, calageParUsage, appliquerCalage,
     fluxActualise, tempsRetourBrut, tempsRetourActualise, van, tresorerie, verdict,
     ACTIONS, ORDRE_FAMILLES, chiffrerQuantite, chiffrer, evaluerAction, choisirParFamille, evaluerBouquet, diagnostiquer,

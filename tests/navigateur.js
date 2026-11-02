@@ -199,6 +199,13 @@ const deborde = function (page) {
   await page.fill('[data-nom-cas]', 'Immeuble test');
   await page.click('[data-action="garder-cas"]');
   ok(/gardé/.test(await page.textContent('.toast')), 'bâtiment gardé comme cas de référence');
+  await page.click('.section-metres summary');
+  const metres = (await page.innerText('.section-metres')).replace(/\s+/g, ' ');
+  ok(/S 20,0 190,0/.test(metres) && /O 12,0 114,0/.test(metres) && !/ E 12,0/.test(metres), 'métrés par orientation : S 190 m², O 114 m², est mitoyen retiré');
+  await page.click('[data-action="copier-metres"]');
+  await page.waitForTimeout(300);
+  const excel = await page.evaluate(function () { return navigator.clipboard.readText().catch(function () { return ''; }); });
+  ok(/S\t20,0\t190,0/.test(excel), 'métrés copiés pour Excel (colonnes séparées par des tabulations)');
   const bouquet = await page.$('[data-bouquet="complet"]');
   if (bouquet) { await bouquet.click(); ok(await page.isVisible('.graphe-cascade'), 'cascade du bouquet affichée'); }
   const [telechargement] = await Promise.all([page.waitForEvent('download'), page.click('[data-action="telecharger-fiche"]')]);
@@ -229,6 +236,9 @@ const deborde = function (page) {
   const carteP = await page.textContent('.action:has-text("Panneaux photovoltaïques")');
   ok(/Production 3\s800 kWh\/an/.test(carteP) && /980 kWh consommés sur place/.test(carteP) && /À discuter/.test(carteP),
     'exemple : panneaux 3 kWc, 3 800 kWh/an dont 980 sur place, 🟠');
+  ok(/eau à ≈ 60 °C/.test(await page.textContent('.action:has-text("Pompe à chaleur air/eau")')), 'PAC seule : radiateurs existants à 60 °C (sans isolation)');
+  await page.click('[data-bouquet="conseille"]');
+  ok(/Radiateurs existants compatibles PAC basse température/.test(await page.textContent('.section-bouquets')), 'bouquet conseillé : badge « radiateurs compatibles PAC basse température »');
   await page.click('[data-panneau="factures"]');
   await page.fill('[data-facture="gaz"]', '30000');
   await page.press('[data-facture="gaz"]', 'Tab');
@@ -268,6 +278,7 @@ const deborde = function (page) {
   const mail = await page.evaluate(function () { return navigator.clipboard.readText().catch(function () { return ''; }); });
   ok(/^Bonjour,/.test(mail) && /Isoler les combles/.test(mail) && /Bien cordialement,\nÉmile/.test(mail), 'texte de mail copié (' + mail.split('\n').length + ' lignes)');
   ok(/Panneaux photovoltaïques : ≈ 330 €/.test(mail), 'mail : panneaux photovoltaïques avec leur économie');
+  ok(/radiateurs actuels devraient suffire/.test(client + mail), 'vue client et mail : les radiateurs actuels suffisent avec une PAC basse température');
   await page.emulateMedia({ media: 'print' });
   ok(await page.isHidden('.entete') && await page.isVisible('.client-page') && await page.isHidden('.client-barre'), 'impression : seulement la page client');
   await page.pdf({ path: path.join(SORTIE, 'vue-client.pdf'), format: 'A4', printBackground: true });

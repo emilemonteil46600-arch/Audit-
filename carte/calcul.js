@@ -66,6 +66,11 @@
         direction = azimut du centre du bâtiment vers le centre du voisin
       Exemple : voisin de 20 m au sud, à 20 m, devant un bâtiment de 9 m → atan(11 / 20) ≈ 28,8° plein sud.
 
+  10) Façades par orientation (métrés pour Pléiades) : la normale extérieure d'un côté est à droite du sens de
+      parcours si le contour tourne dans le sens inverse des aiguilles d'une montre (aire signée > 0), à gauche sinon.
+      On range chaque côté dans 8 secteurs de 45° (N = 337,5° à 22,5°…) avec sa façade exposée L × h exposée.
+      Exemple : rectangle de 20 m (est-ouest) × 12 m, 9,5 m de haut, sans voisin : N 190 m², S 190 m², E 114 m², O 114 m².
+
    9) Altitude : altitude du sol lue dans la BD TOPO (champ altitude_minimale_sol), sinon la moyenne des Z du contour
       (H : ce Z peut être celui du toit, soit quelques mètres de trop : moins de 1 % sur les DJU).
    ========================================================== */
@@ -181,6 +186,10 @@
       const h = b.hauteur;
       surfaceSol += aire; sommeHauteur += aire * h;
       const s = sommetsOuverts(b.contour);
+      // Sens de parcours (aire signée) : pour trouver la normale extérieure de chaque côté (point 10).
+      const xy = s.map(m);
+      let signe = 0;
+      xy.forEach(function (p, i) { const q = xy[(i + 1) % xy.length]; signe += p[0] * q[1] - q[0] * p[1]; });
       s.forEach(function (p, i) {
         const a = m(p), z = m(s[(i + 1) % s.length]);
         const longueur = Math.hypot(z[0] - a[0], z[1] - a[1]);
@@ -200,8 +209,10 @@
         if (type !== 'interne') perimetre += longueur;
         if (type === 'libre') expose += longueur;
         facades += longueur * hauteurExposee;
+        const nx = signe > 0 ? z[1] - a[1] : a[1] - z[1], ny = signe > 0 ? a[0] - z[0] : z[0] - a[0];
         cotes.push({ debut: p, fin: s[(i + 1) % s.length], longueur: longueur, type: type, mitoyen: type === 'mitoyen',
-          hauteurVoisin: touche && isFinite(touche.hv) ? touche.hv : null, hauteurExposee: hauteurExposee });
+          hauteurVoisin: touche && isFinite(touche.hv) ? touche.hv : null, hauteurExposee: hauteurExposee,
+          normale: (Math.atan2(nx, ny) * 180 / Math.PI + 360) % 360 });
       });
     });
     const hauteur = surfaceSol > 0 ? sommeHauteur / surfaceSol : 0;
@@ -225,6 +236,20 @@
       if (aire > plusGrand) { plusGrand = aire; principal = i; }
     });
     return { surfaceSol: sol, surfacePlancher: plancher, niveaux: sol > 0 ? Math.max(1, Math.round(plancher / sol)) : 1, principal: principal };
+  }
+
+  // Façades exposées par orientation (point 10) : { N: { facade, longueur }, … }.
+  const SECTEURS = ['N', 'NE', 'E', 'SE', 'S', 'SO', 'O', 'NO'];
+  function facadesParOrientation(cotes) {
+    const o = {};
+    (cotes || []).forEach(function (c) {
+      if (!(c.hauteurExposee > 0) || c.normale === undefined) return;
+      const k = SECTEURS[Math.round(c.normale / 45) % 8];
+      const x = o[k] || (o[k] = { facade: 0, longueur: 0 });
+      x.facade += c.longueur * c.hauteurExposee;
+      x.longueur += c.longueur;
+    });
+    return o;
   }
 
   // Masques solaires (point 8) : voisins plus hauts que le bâtiment, vus de son centre.
@@ -628,7 +653,7 @@
 
   const CarteCalcul = {
     enRadians, sommetsOuverts, centre, emprise, versMetres, surfaceSolM2, distanceM, perimetreM, distancePointSegment, mitoyennete,
-    analyserEnsemble, surfacesEnsemble, masquesSolaires, altitudeBatiment, orientationFaitage, pointDansPolygone, bboxAutour, lonLatVersTuile, remettreLonLat, contourExterieur, choisirBatiment, lireCoordonnees,
+    analyserEnsemble, surfacesEnsemble, facadesParOrientation, masquesSolaires, altitudeBatiment, orientationFaitage, pointDansPolygone, bboxAutour, lonLatVersTuile, remettreLonLat, contourExterieur, choisirBatiment, lireCoordonnees,
     niveauxDepuisHauteur, estimerSurface, premier, anneeDepuis, decoderMateriaux, typeToitureDepuisMateriaux,
     usageDepuisBdTopo, lireBatimentBdTopo, energieDepuisTexte, lireBdnb, lireDpe, departementDepuisCodePostal,
     lireAdresse, lirePhotos, champsUtiles, verdict, URLS, MATERIAUX_MURS, MATERIAUX_TOIT
