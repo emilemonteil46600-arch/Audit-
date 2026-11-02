@@ -183,6 +183,20 @@
   groupe('Climat', SOURCES.code, 'valide', [
     ['climat.ti', 'Température intérieure de chauffage', 19, '°C']
   ]);
+  groupe('Climat', "Altitude approximative de la ou des villes de référence des DJU de la zone, reprise de mémoire (H) : à remplacer par l'altitude de la station utilisée", 'exemple', [
+    ['climat.H1a.altitude', 'Altitude de référence des DJU — H1a', 50, 'm'],
+    ['climat.H1b.altitude', 'Altitude de référence des DJU — H1b', 200, 'm'],
+    ['climat.H1c.altitude', 'Altitude de référence des DJU — H1c', 250, 'm'],
+    ['climat.H2a.altitude', 'Altitude de référence des DJU — H2a', 50, 'm'],
+    ['climat.H2b.altitude', 'Altitude de référence des DJU — H2b', 50, 'm'],
+    ['climat.H2c.altitude', 'Altitude de référence des DJU — H2c', 100, 'm'],
+    ['climat.H2d.altitude', 'Altitude de référence des DJU — H2d', 50, 'm'],
+    ['climat.H3.altitude', 'Altitude de référence des DJU — H3', 30, 'm']
+  ]);
+  groupe('Climat', "Ordre de grandeur : la température baisse d'environ 0,6 °C par 100 m d'altitude, sur une saison de chauffe qui s'allonge ; à vérifier avec les DJU d'une station proche (H)", 'exemple', [
+    ['climat.gradientDju', 'DJU en plus par 100 m au-dessus de l’altitude de référence', 120, 'K·j / 100 m'],
+    ['climat.gradientTbase', 'Température de base en moins par 100 m', 0.6, '°C / 100 m']
+  ]);
   groupe('Climat', SOURCES.ratios, 'exemple', [
     ['froid.H1', 'Besoin de froid par m² climatisé — zones H1', 15, 'kWh/m²·an'],
     ['froid.H2', 'Besoin de froid par m² climatisé — zones H2', 20, 'kWh/m²·an'],
@@ -537,6 +551,11 @@
     ['pv.facteur.terrasse', 'Production relative — toit plat (modules peu inclinés)', 0.9, '–'],
     ['pv.facteur.inconnu', 'Production relative — orientation inconnue (sans carte)', 0.9, '–']
   ]);
+  groupe('Photovoltaïque', "Règle simplifiée de l'outil pour les ombres des voisins (H) : à remplacer par un relevé de masques (PVGIS accepte un horizon) en visite", 'exemple', [
+    ['pv.ombre.seuil', 'Un voisin fait de l’ombre au-dessus de cette hauteur angulaire', 10, '°'],
+    ['pv.ombre.pente', 'Perte de production par degré au-dessus du seuil (voisin en face du pan)', 0.02, '/°'],
+    ['pv.ombre.max', 'Perte de production maximale par les ombres', 0.6, '–']
+  ]);
   groupe('Photovoltaïque', SOURCES.outil, 'exemple', [
     ['pv.pente', 'Pente supposée des toits en combles', 35, '°'],
     ['pv.part.pan', 'Part utilisable d’un pan (rives, faîtage, obstacles)', 0.7, '–'],
@@ -559,6 +578,19 @@
   ]);
   groupe('Photovoltaïque', "TVA de 20 % par défaut ; des taux réduits existent pour certaines petites installations résidentielles, à vérifier (H)", 'exemple', [
     ['eco.tva.pv', 'TVA des panneaux photovoltaïques', 0.2, '–']
+  ]);
+
+  // Réglementation tertiaire : alertes automatiques (pas de chiffrage).
+  groupe('Réglementation', "Décret n° 2019-771 (« décret tertiaire ») : bâtiments ou ensembles de plus de 1 000 m² d'activité tertiaire, baisse de la consommation d'énergie finale de 40 % en 2030, 50 % en 2040 et 60 % en 2050 par rapport à une année de référence (≥ 2010). Repris de mémoire, à vérifier sur OPERAT (H)", 'exemple', [
+    ['regl.tertiaire.surface', 'Décret tertiaire : surface d’activité tertiaire à partir de laquelle il s’applique', 1000, 'm²'],
+    ['regl.tertiaire.2030', 'Décret tertiaire : baisse visée en 2030', 0.4, '–'],
+    ['regl.tertiaire.2040', 'Décret tertiaire : baisse visée en 2040', 0.5, '–'],
+    ['regl.tertiaire.2050', 'Décret tertiaire : baisse visée en 2050', 0.6, '–']
+  ]);
+  groupe('Réglementation', "Décret « BACS » n° 2020-887 modifié par le décret n° 2023-259 : système d'automatisation et de contrôle (GTB, classe A ou B) obligatoire en tertiaire au-dessus de 290 kW de chauffage ou de climatisation (depuis 2025) et de 70 kW (au 1er janvier 2027). Repris de mémoire, à vérifier (H)", 'exemple', [
+    ['regl.bacs.seuil2025', 'BACS : puissance au-dessus de laquelle la GTB est obligatoire depuis 2025', 290, 'kW'],
+    ['regl.bacs.seuil2027', 'BACS : puissance au-dessus de laquelle la GTB est obligatoire en 2027', 70, 'kW'],
+    ['regl.bacs.marge', 'Puissance estimée « proche du seuil » au-dessus de cette part du seuil (à vérifier sur la plaque)', 0.7, '–']
   ]);
 
   /* ---------- Bâtiments types (fictifs) ----------

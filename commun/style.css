@@ -809,3 +809,21 @@ a.outil:hover { border-color: var(--accent); transform: translateY(-2px); }
   .graphe-cascade { gap: 4px; }
   .cascade-piste { height: 16px; }
 }
+
+/* ---------- Retours de relecture (02/11/2026) : sources des vignettes, aides, réglementation ---------- */
+.vignette { flex-wrap: wrap; }
+.vignette-i { position: absolute; right: 6px; bottom: 6px; display: grid; place-items: center; width: 24px; height: 24px; padding: 0; border: 0; border-radius: 50%; background: transparent; color: var(--encre-3); cursor: pointer; }
+.vignette-i:hover, .vignette-i[aria-expanded="true"] { color: var(--accent); background: var(--surface-2); }
+.vignette-i .ico { width: 16px; height: 16px; }
+.vignette-source { flex-basis: 100%; margin: 4px 0 0; padding: 7px 9px; border-radius: 8px; background: var(--surface-2); font-size: .74rem; line-height: 1.4; color: var(--encre-2); }
+.apres-aides { display: block; font-size: .7rem; font-weight: 600; color: var(--ok); }
+.section-regl .alerte-regl { padding: 10px 12px; margin-top: 10px; border-left: 4px solid var(--alerte); border-radius: 8px; background: var(--surface-2); }
+.section-regl h3 { display: flex; align-items: center; gap: 7px; margin: 0 0 4px; font-size: .95rem; }
+.section-regl h3 .ico { color: var(--alerte); }
+.section-regl p { margin: 4px 0; font-size: .85rem; }
+.trajectoire { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 6px; }
+.trajectoire li { display: grid; grid-template-columns: 52px minmax(0, 1fr) auto; gap: 8px; align-items: center; font-size: .82rem; }
+.trajectoire em { font-style: normal; font-weight: 650; font-size: .76rem; padding: 2px 8px; border-radius: 99px; }
+.trajectoire em.ok { color: var(--ok); background: var(--ok-doux); }
+.trajectoire em.ko { color: var(--danger); background: var(--surface); }
+@media (max-width: 520px) { .trajectoire li { grid-template-columns: 44px minmax(0, 1fr); } .trajectoire em { grid-column: 2; justify-self: start; } }

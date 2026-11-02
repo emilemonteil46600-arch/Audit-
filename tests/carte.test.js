@@ -176,3 +176,36 @@ test('Faîtage : rectangle 20 m est-ouest × 12 m → 90°, allongement 0,25 ; c
   const carre = [[1.44, lat], [1.44 + dLon(10), lat], [1.44 + dLon(10), lat + dLat(10)], [1.44, lat + dLat(10)]];
   assert.equal(C.orientationFaitage(carre, R, 0.1), null);
 });
+
+test('Façades : R+2 de 9 m collé sur 10 m à un garage de 3 m → 330 m² exposés (et non 270)', function () {
+  const lat = 43.6;
+  const pt = function (x, y) { return [1.44 + x / R * 180 / Math.PI / Math.cos(lat * Math.PI / 180), lat + y / R * 180 / Math.PI]; };
+  const rect = function (x, y, l, h) { return [pt(x, y), pt(x + l, y), pt(x + l, y + h), pt(x, y + h), pt(x, y)]; };
+  const a = C.analyserEnsemble([{ contour: rect(0, 0, 10, 10), hauteur: 9 }], [{ contour: rect(10, 0, 6, 10), hauteur: 3 }], R, 1);
+  assert.ok(proche(a.facades, 330, 0.01));
+  assert.ok(proche(a.perimetreFacade, 330 / 9, 0.01));
+  assert.ok(proche(a.perimetreExpose, 30, 0.01));
+  // Voisin plus haut, ou de hauteur inconnue : tout le côté est mitoyen
+  assert.ok(proche(C.analyserEnsemble([{ contour: rect(0, 0, 10, 10), hauteur: 9 }], [{ contour: rect(10, 0, 6, 10), hauteur: null }], R, 1).facades, 270, 0.01));
+  // Deux bâtiments choisis ensemble (9 m et 3 m) : le mur qui les sépare sort du périmètre, sauf 6 m au-dessus du plus bas
+  const b = C.analyserEnsemble([{ contour: rect(0, 0, 10, 10), hauteur: 9 }, { contour: rect(10, 0, 10, 10), hauteur: 3 }], [], R, 1);
+  assert.ok(proche(b.surfaceSol, 200, 0.1));
+  assert.ok(proche(b.perimetre, 60, 0.01));
+  assert.ok(proche(b.facades, 30 * 9 + 30 * 3 + 10 * 6, 0.01));
+  const s = C.surfacesEnsemble([{ contour: rect(0, 0, 10, 10), hauteurLue: 9, etages: null }, { contour: rect(10, 0, 10, 10), hauteurLue: 3, etages: null }], R, 3);
+  assert.ok(proche(s.surfacePlancher, 300 + 100, 0.5));
+  assert.equal(s.niveaux, 2);
+});
+
+test('Ombres : voisin de 20 m au sud à 20 m d’un bâtiment de 9 m → 28,8° plein sud ; altitude lue', function () {
+  const lat = 43.6;
+  const pt = function (x, y) { return [1.44 + x / R * 180 / Math.PI / Math.cos(lat * Math.PI / 180), lat + y / R * 180 / Math.PI]; };
+  const rect = function (x, y, l, h) { return [pt(x, y), pt(x + l, y), pt(x + l, y + h), pt(x, y + h), pt(x, y)]; };
+  const m = C.masquesSolaires(rect(-5, -5, 10, 10), 9, [{ contour: rect(-5, -30, 10, 10), hauteur: 20 }, { contour: rect(20, -5, 10, 10), hauteur: 6 }], R, 80);
+  assert.equal(m.length, 1);
+  assert.ok(proche(m[0].azimut, 180, 0.01));
+  assert.ok(proche(m[0].angle, Math.atan(11 / 20) * 180 / Math.PI, 0.01));
+  assert.equal(C.altitudeBatiment({ altitude_minimale_sol: 412.5 }, null), 412.5);
+  assert.equal(C.altitudeBatiment({}, { type: 'Polygon', coordinates: [[[1, 43, 100], [1.1, 43, 110], [1, 43.1, 120]]] }), 110);
+  assert.equal(C.altitudeBatiment({}, { type: 'Polygon', coordinates: [[[1, 43], [1.1, 43], [1, 43.1]]] }), null);
+});

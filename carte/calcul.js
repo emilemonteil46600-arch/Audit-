@@ -50,6 +50,24 @@
       Exemple : rectangle de 20 m (est-ouest) × 12 m (nord-sud)
         X = 2 × 20 × cos 180° + 2 × 12 × cos 0° = − 40 + 24 = − 16 ; Y = 0
         faîtage = ½ × 180° = 90° (est-ouest : un pan au sud, un au nord) ; allongement = 16 / 64 = 0,25
+
+   7) Façades exposées en tenant compte de la HAUTEUR du voisin, pour un ou plusieurs bâtiments
+      choisis ensemble (école + extension…). Chaque côté est :
+        libre    → façade exposée = L × h
+        mitoyen  (collé à un voisin de hauteur hv)            → façade exposée = L × max(0, h − hv)
+        interne  (collé à un autre bâtiment de la sélection) → idem, et il ne compte pas dans le périmètre
+      Hauteur du voisin inconnue → tout le côté est mitoyen (H).
+      Périmètre de façade équivalent = façades exposées / hauteur moyenne (le moteur fait façades = P × h).
+      Exemple : 10 m × 10 m, 9 m de haut (R+2), collé sur 10 m à un garage de 3 m
+        façades = 30 × 9 + 10 × (9 − 3) = 270 + 60 = 330 m² (et non 270) → périmètre équivalent 36,7 m
+
+   8) Masques solaires (ombres des voisins plus hauts) : pour chaque voisin à moins de 80 m (H),
+        hauteur angulaire = atan((h voisin − h bâtiment) / distance au point le plus proche)
+        direction = azimut du centre du bâtiment vers le centre du voisin
+      Exemple : voisin de 20 m au sud, à 20 m, devant un bâtiment de 9 m → atan(11 / 20) ≈ 28,8° plein sud.
+
+   9) Altitude : altitude du sol lue dans la BD TOPO (champ altitude_minimale_sol), sinon la moyenne des Z du contour
+      (H : ce Z peut être celui du toit, soit quelques mètres de trop : moins de 1 % sur les DJU).
    ========================================================== */
 (function (global) {
   'use strict';
@@ -143,6 +161,98 @@
       return { debut: p, fin: s[(i + 1) % s.length], longueur: longueur, mitoyen: estMitoyen };
     });
     return { perimetre: perimetre, mitoyen: mitoyen, expose: perimetre - mitoyen, part: perimetre > 0 ? mitoyen / perimetre : 0, cotes: cotes };
+  }
+
+  // Façades exposées d'un ou plusieurs bâtiments choisis ensemble (point 7 en haut du fichier).
+  // selection, voisins : [{ contour, hauteur }] (hauteur en m, null si inconnue).
+  function analyserEnsemble(selection, voisins, rayonTerre, tolerance) {
+    const tous = selection.map(function (b) { return { contour: b.contour, hauteur: b.hauteur, interne: true }; })
+      .concat((voisins || []).map(function (b) { return { contour: b.contour, hauteur: b.hauteur, interne: false }; }));
+    const origine = centre(sommetsOuverts(selection[0].contour));
+    const m = function (p) { return versMetres(p, origine, rayonTerre); };
+    const aretes = tous.map(function (b) {
+      const s = sommetsOuverts(b.contour).map(m);
+      return s.map(function (p, i) { return [p, s[(i + 1) % s.length]]; });
+    });
+    let surfaceSol = 0, perimetre = 0, expose = 0, facades = 0, sommeHauteur = 0;
+    const cotes = [];
+    selection.forEach(function (b, n) {
+      const aire = surfaceSolM2(b.contour, rayonTerre);
+      const h = b.hauteur;
+      surfaceSol += aire; sommeHauteur += aire * h;
+      const s = sommetsOuverts(b.contour);
+      s.forEach(function (p, i) {
+        const a = m(p), z = m(s[(i + 1) % s.length]);
+        const longueur = Math.hypot(z[0] - a[0], z[1] - a[1]);
+        // Le bâtiment touché sur ce côté (2 des 3 points à moins de la tolérance) ; le plus haut s'il y en a plusieurs.
+        let touche = null;
+        tous.forEach(function (autre, k) {
+          if (k === n) return;
+          const proches = [0.25, 0.5, 0.75].filter(function (t) {
+            const q = [a[0] + t * (z[0] - a[0]), a[1] + t * (z[1] - a[1])];
+            return aretes[k].some(function (ar) { return distancePointSegment(q, ar[0], ar[1]) <= tolerance; });
+          }).length;
+          const hv = autre.hauteur > 0 ? autre.hauteur : Infinity;
+          if (proches >= 2 && (!touche || hv > touche.hv)) touche = { hv: hv, interne: autre.interne };
+        });
+        const type = !touche ? 'libre' : touche.interne ? 'interne' : 'mitoyen';
+        const hauteurExposee = touche ? Math.max(0, h - touche.hv) : h;
+        if (type !== 'interne') perimetre += longueur;
+        if (type === 'libre') expose += longueur;
+        facades += longueur * hauteurExposee;
+        cotes.push({ debut: p, fin: s[(i + 1) % s.length], longueur: longueur, type: type, mitoyen: type === 'mitoyen',
+          hauteurVoisin: touche && isFinite(touche.hv) ? touche.hv : null, hauteurExposee: hauteurExposee });
+      });
+    });
+    const hauteur = surfaceSol > 0 ? sommeHauteur / surfaceSol : 0;
+    return {
+      surfaceSol: surfaceSol, perimetre: perimetre, perimetreExpose: expose, hauteur: hauteur, facades: facades,
+      perimetreFacade: hauteur > 0 ? facades / hauteur : expose,
+      partMitoyenne: perimetre > 0 && hauteur > 0 ? Math.max(0, 1 - facades / (perimetre * hauteur)) : 0,
+      cotes: cotes
+    };
+  }
+
+  // Surfaces d'un ensemble (points 2 et 3 pour chaque bâtiment) : plancher = Σ S au sol × niveaux ;
+  // « principal » = le plus grand au sol (il donne le toit, le faîtage et les ombres).
+  function surfacesEnsemble(selection, rayonTerre, hauteurEtage) {
+    let sol = 0, plancher = 0, principal = 0, plusGrand = -1;
+    selection.forEach(function (b, i) {
+      const aire = surfaceSolM2(b.contour, rayonTerre);
+      const e = estimerSurface(aire, b.hauteurLue, b.etages, hauteurEtage);
+      sol += aire;
+      plancher += e.surfacePlancher || aire;
+      if (aire > plusGrand) { plusGrand = aire; principal = i; }
+    });
+    return { surfaceSol: sol, surfacePlancher: plancher, niveaux: sol > 0 ? Math.max(1, Math.round(plancher / sol)) : 1, principal: principal };
+  }
+
+  // Masques solaires (point 8) : voisins plus hauts que le bâtiment, vus de son centre.
+  function masquesSolaires(contour, hauteur, voisins, rayonTerre, rayonMax) {
+    const c = centre(sommetsOuverts(contour));
+    const liste = [];
+    (voisins || []).forEach(function (v) {
+      if (!(v.hauteur > hauteur)) return;
+      const s = sommetsOuverts(v.contour).map(function (p) { return versMetres(p, c, rayonTerre); });
+      let d = Infinity;
+      s.forEach(function (p, i) { d = Math.min(d, distancePointSegment([0, 0], p, s[(i + 1) % s.length])); });
+      if (!(d > 0) || d > rayonMax) return;
+      const cv = versMetres(centre(sommetsOuverts(v.contour)), c, rayonTerre);
+      const azimut = (Math.atan2(cv[0], cv[1]) * 180 / Math.PI + 360) % 360;
+      liste.push({ azimut: azimut, angle: Math.atan((v.hauteur - hauteur) / d) * 180 / Math.PI, distance: d });
+    });
+    return liste;
+  }
+
+  // Altitude du sol (point 9) : champ de la BD TOPO, sinon moyenne des Z du contour.
+  function altitudeBatiment(proprietes, geometrie) {
+    const champ = Number((proprietes || {}).altitude_minimale_sol);
+    if (isFinite(champ) && champ > -100 && (proprietes.altitude_minimale_sol !== null && proprietes.altitude_minimale_sol !== '')) return champ;
+    let anneau = null;
+    if (geometrie && geometrie.type === 'Polygon') anneau = geometrie.coordinates[0];
+    else if (geometrie && geometrie.type === 'MultiPolygon') anneau = geometrie.coordinates[0] && geometrie.coordinates[0][0];
+    const z = (anneau || []).map(function (c) { return Number(c[2]); }).filter(function (x) { return isFinite(x) && x > -100; });
+    return z.length ? z.reduce(function (a, b) { return a + b; }, 0) / z.length : null;
   }
 
   // Direction du faîtage en degrés (0 = nord-sud, 90 = est-ouest) : voir le point 6 en haut du fichier.
@@ -518,7 +628,7 @@
 
   const CarteCalcul = {
     enRadians, sommetsOuverts, centre, emprise, versMetres, surfaceSolM2, distanceM, perimetreM, distancePointSegment, mitoyennete,
-    orientationFaitage, pointDansPolygone, bboxAutour, lonLatVersTuile, remettreLonLat, contourExterieur, choisirBatiment, lireCoordonnees,
+    analyserEnsemble, surfacesEnsemble, masquesSolaires, altitudeBatiment, orientationFaitage, pointDansPolygone, bboxAutour, lonLatVersTuile, remettreLonLat, contourExterieur, choisirBatiment, lireCoordonnees,
     niveauxDepuisHauteur, estimerSurface, premier, anneeDepuis, decoderMateriaux, typeToitureDepuisMateriaux,
     usageDepuisBdTopo, lireBatimentBdTopo, energieDepuisTexte, lireBdnb, lireDpe, departementDepuisCodePostal,
     lireAdresse, lirePhotos, champsUtiles, verdict, URLS, MATERIAUX_MURS, MATERIAUX_TOIT

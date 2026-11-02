@@ -65,9 +65,10 @@ ne vaut pas le coup (« la toiture oui, le vitrage non, déjà du double vitrage
   donnees/sources.js          VALEURS_FLASH : constantes de la carte (hauteur d'étage, rayons, tolérance mitoyenneté, allongement
                               minimal pour lire le faîtage…)
   donnees/services.js         SERVICES_FLASH : services publics du test de faisabilité, doc, conditions (H)
-  carte/calcul.js             fonctions pures : surface, périmètre, mitoyenneté, direction du faîtage, emprise, lecture BD TOPO / BDNB / DPE /
+  carte/calcul.js             fonctions pures : surface, périmètre, mitoyenneté, façades selon la hauteur des voisins et ensemble de
+                              bâtiments (analyserEnsemble), ombres des voisins (masquesSolaires), altitude, direction du faîtage, emprise, lecture BD TOPO / BDNB / DPE /
                               BAN / Panoramax, adresses des services (seule l'adresse ou un point part)
-  carte/interface.js          carte MapLibre (fonds Plan IGN / photo IGN / OSM, bâtiments 3D, clic, recherche
+  carte/interface.js          carte MapLibre (fonds Plan IGN / photo IGN / OSM, bâtiments 3D, clic, Maj + clic ou « + Bâtiment », recherche
                               d'adresse) + appels aux services, AUCUN calcul → window.CarteFlash
   moteur/calcul.js            le moteur (fonctions pures) : compléter les réponses, déperditions, consommations,
                               EP / CO₂ / €, étiquette, fourchette, calage (+ correction climatique), actions, bouquets, rentabilité,
@@ -98,9 +99,12 @@ ne vaut pas le coup (« la toiture oui, le vitrage non, déjà du double vitrage
 1. **Compléter** : chaque réponse a une origine `saisie` > `bdnb` / `dpe` / `carte` > `deduite`. Ce qui manque est
    déduit de la période (10 périodes 3CL) et de l'usage (8 usages). « Si inconnu » = **état le plus probable
    aujourd'hui** pour l'époque (une partie du parc a été isolée / a changé ses fenêtres), pas l'état d'origine (H).
-2. **Déperditions** U × A + ψ × L + 0,34 × n × V ; façades = périmètre **exposé** (mitoyenneté lue sur la carte) × hauteur ;
+2. **Déperditions** U × A + ψ × L + 0,34 × n × V ; façades = **périmètre de façade** × hauteur, où la carte compte un côté
+   mitoyen seulement sur la **hauteur du voisin** (R+2 de 9 m collé à un garage de 3 m : 6 m exposés) ; plusieurs bâtiments
+   choisis ensemble (Maj + clic) : surfaces additionnées, murs internes hors périmètre ;
    terre-plein selon NF EN ISO 13370 ; vide sanitaire / sous-sol avec un coefficient b.
-3. **Consommations** : degrés-jours (DJU base 18 de la zone) × intermittence × régulation / rendement (ou COP) ;
+3. **Consommations** : degrés-jours (DJU base 18 de la zone, **+ 120 DJU et − 0,6 °C de T base par 100 m** au-dessus de
+   l'altitude de référence de la zone, si la carte donne l'altitude) × intermittence × régulation / rendement (ou COP) ;
    ECS 56 L/j/pers. à 40 °C en logement, ratios en tertiaire ; éclairage, auxiliaires, autres usages, froid.
 4. **EP, CO₂, €** (gaz : kWh PCS = 1,11 × PCI) ; étiquette indicative logement (double seuil).
 5. **Fourchette** : sensibilité de 12 facteurs, cumul en quadrature δ = √(Σ Δᵢ²) ; fiabilité bonne ≤ 15 %, moyenne ≤ 30 %.
@@ -111,6 +115,8 @@ ne vaut pas le coup (« la toiture oui, le vitrage non, déjà du double vitrage
 7. **Actions** (15, en 10 familles) : chacune a un état `ok` / `deja` (« déjà du double vitrage récent ») / `sansObjet`,
    un coût TTC (ratios × quantités × (1 + frais) × (1 + TVA 5,5 % logement ou 20 % ; panneaux : 20 %)), TRB, TRA, VAN, verdict
    ✅ TRA ≤ ½ durée de vie / 🟠 ≤ durée de vie / ❌. Dans une famille (ex. ITE / ITI), la meilleure VAN est retenue.
+   **Aides estimées** (onglet Factures, % saisi par Émile, option `aides`) : coût net = TTC × (1 − aides) pour TRB, TRA,
+   VAN, verdict et bouquets ; le coût brut reste affiché.
 8. **Bouquets** (ce qui vaut le coup / rentable + à discuter / rénovation complète), calculés **dans l'ordre**
    (enveloppe → ventilation → régulation → chauffage → ECS → éclairage → panneaux) ; la PAC est dimensionnée après
    l'isolation, les panneaux sur le bâtiment amélioré.
@@ -127,6 +133,11 @@ ne vaut pas le coup (« la toiture oui, le vitrage non, déjà du double vitrage
    surplus × tarif de vente (**la vente ne suit pas la hausse des prix** : paramètre `fixe` du TRA / VAN). Taille : 3, 6, 9 kWc,
    la taille qui couvre la consommation de jour, le toit entier → meilleure VAN. Déduit de la facture, de l'EP et du CO₂
    (étiquette : seulement la part qui couvre les 5 usages). « Déjà installés » → action « déjà fait » (factures nettes).
+   **Ombres** : voisins plus hauts à moins de 80 m vus sous α → perte = 0,02 × (α − 10°) × cos(écart de direction), ≤ 60 % ;
+   un pan trop à l'ombre n'est plus équipé.
+12. **Réglementation** (tertiaire, `alertesReglementaires`) : décret tertiaire si S plancher ≥ 1 000 m² (− 40 / − 50 / − 60 %
+   de la consommation actuelle (H), premier bouquet qui l'atteint) ; décret BACS si la puissance estimée > 70 kW (2027) ou
+   290 kW (2025), « proche » au-delà de 70 % du seuil. Seuils de mémoire (H), dans Données → Réglementation.
 
 ## Confidentialité — IMPORTANT
 
@@ -134,10 +145,12 @@ ne vaut pas le coup (« la toiture oui, le vitrage non, déjà du double vitrage
 - Seule l'**adresse** (ou un point) part vers des services publics, **jamais le nom du client**.
 - **Stockage navigateur** : les deux sites sont sur la même origine `emilemonteil46600-arch.github.io`, donc ils
   **partagent le même localStorage**. Toutes les clés de ce site passent par `FLASH.cle()` et commencent par
-  **`flash.`** : `flash.etat.v1` (bâtiment, réponses, factures, DJU des factures), `flash.donnees.v1` (valeurs modifiées
+  **`flash.`** : `flash.etat.v1` (bâtiment, réponses, factures, DJU des factures, aides estimées), `flash.donnees.v1` (valeurs modifiées
   dans Données), `flash.validees.v1` (valeurs d'exemple validées par Émile : { id: date }), `flash.cas.v1` (cas de
   référence : réponses + factures, **sans adresse** ; nom libre, à donner sans nom de client), `flash.signature.v1`
   (« Préparé par » de la vue client, saisi par Émile, jamais dans le dépôt).
+  **Sauvegarde** (onglet Données) : un fichier JSON `audit-flash-sauvegarde` (valeurs modifiées et validées, cas, « Préparé par »)
+  téléchargé chez Émile, jamais envoyé ; l'import accepte aussi l'ancien export des cas.
   Ne **jamais** écrire une clé `bao.*` (refusé par `FLASH.cle`, vérifié par les tests), sauf plus tard via le bouton
   « Approfondir » explicitement validé par Émile. **Ne pas renommer ces clés sans migration.**
 
@@ -148,12 +161,14 @@ ne vaut pas le coup (« la toiture oui, le vitrage non, déjà du double vitrage
 
 ## Vérifications avant de publier
 
-1. `node --test` à la racine (56 tests) : syntaxe, scripts des pages, bandeau pré-diagnostic, versions de CDN fixées,
+1. `node --test` à la racine (59 tests) : syntaxe, scripts des pages, bandeau pré-diagnostic, versions de CDN fixées,
    pas de clé `bao.*`, stockage préfixé, valeurs sourcées (et chaque choix a ses valeurs), 96 départements,
    et les exemples :
    - carte : carré de 0,0001° à 45° → **87,4 m²** ; 240 m² × 3 niveaux (9,5 m / 3 m) = **720 m²** ;
      deux maisons 10 × 10 collées → **10 m mitoyens, 30 m exposés** ; rectangle 20 m est-ouest × 12 m → faîtage **90°**,
-     allongement **0,25** ; carré → faîtage inconnu ;
+     allongement **0,25** ; carré → faîtage inconnu ; R+2 de 9 m collé sur 10 m à un garage de 3 m → **330 m²** de façades
+     (et non 270) ; 2 bâtiments 9 m + 3 m choisis ensemble → périmètre **60 m**, plancher **400 m²**, 2 niveaux ;
+     voisin de 20 m à 20 m au sud d'un bâtiment de 9 m → **28,8°** plein sud ;
    - moteur, maison de plain-pied de 1970 à Toulouse (10 × 10 m, 3 m, chaudière gaz ancienne, reste déduit) :
      H = **508,6 W/K**, besoin **21 422 kWh**, gaz **29 753 + 2 393 kWh**, élec **2 800 kWh**, facture **≈ 4 541 €/an**,
      **F / F** (411 kWhEP/m², 92 kgCO₂/m²), puissance **12,2 kW** ; combles : **≈ 614 €/an**, coût 2 901 – 5 222 € TTC, ✅ ;
@@ -164,19 +179,22 @@ ne vaut pas le coup (« la toiture oui, le vitrage non, déjà du double vitrage
      cas de référence exact → écart 0 et « dedans » ; factures gaz 20 000 → écart + 78 %, « dehors » ;
      panneaux (faîtage est-ouest, comme le bouton Exemple) : pan sud ≈ **8,5 kWc** posables, **3 kWc** retenus,
      **3 840 kWh** dont **980** sur place (0,35 × 2 800), 2 860 vendus, **330 €/an** (216 + 114), **4 356 – 7 128 € TTC**,
-     TRB ≈ 17 ans, TRA ≈ 22 ans → 🟠 ; calé sur 3 000 kWh d'électricité → 1 050 kWh sur place.
+     TRB ≈ 17 ans, TRA ≈ 22 ans → 🟠 ; calé sur 3 000 kWh d'électricité → 1 050 kWh sur place ;
+     ombre plein sud à 28,8° → perte **37,6 %**, pan sud plus équipé ; aides 30 % → ITE 🟠 → ✅ ;
+     immeuble de Lyon à 650 m → **3 130 DJU**, T base **− 12,4 °C** ; bureaux de Paris → décret tertiaire + BACS (≈ 128 kW > 70).
 2. `node tests/navigateur.js` (Playwright ; `MAPLIBRE_LOCAL=…/maplibre-gl/dist` si unpkg est inaccessible) :
-   parcours complet avec services simulés (adresse → bâtiment 3D → mitoyenneté 19 % → BDNB → toiture solaire (toit plat,
+   parcours complet avec services simulés (adresse → bâtiment 3D → mitoyenneté 19 %, 494 m² de façade → « d'où ça vient ? »
+   → **Maj + clic** sur le voisin (2 bâtiments, 408 m²) puis retrait → BDNB → toiture solaire (toit plat,
    puis pan sud si on répond « combles ») → question vitrage → panneaux « déjà installés » →
-   factures → DJU de l'année → garder comme cas → bouquet → fiche Word → Données (priorités, « Je valide », modification)
+   factures → DJU de l'année → aides 30 % (coût après aides) → garder comme cas → bouquet → fiche Word → Données (priorités, « Je valide », modification)
    → Méthode → 2e cas (carte « Panneaux » : 3 800 kWh/an dont 980 sur place) → Validation (stats, nuage, export JSON,
-   rouvrir un cas) → Vue client (recommandations, panneaux « vente du surplus comprise », aide citée,
+   sauvegarde complète JSON, rouvrir un cas) → Vue client (recommandations, panneaux « vente du surplus comprise », aide citée,
    « Préparé par », texte de mail relu dans le presse-papiers, impression : seulement la page, PDF A4)), vues bien masquées,
    mode sans réseau, 390 px clair/sombre (Diagnostic, Données, Méthode, Validation, Vue client).
 3. Si un exemple de calcul change, mettre à jour **en même temps** le commentaire du `calcul.js`, l'onglet Méthode
    (index.html), le test et ce fichier.
 
-## État au 01/11/2026
+## État au 02/11/2026
 
 | Partie | État |
 |---|---|
@@ -185,6 +203,7 @@ ne vaut pas le coup (« la toiture oui, le vitrage non, déjà du double vitrage
 | Moteur | **V1** complet (voir plus haut), 300 valeurs d'exemple sourcées « de mémoire » (réseau fermé pour Claude) : **à vérifier** (3CL, DPE, DJU, coefficients). |
 | Interface | **V1** : résumé collant, vignettes avec origine, questions en tuiles (« supposé » en pointillés), factures + k + DJU de l'année, 6 indicateurs, 4 graphiques, préconisations ✅/🟠/❌ avec jauge et trésorerie, bouquets + cascade + étiquette avant/après, liste de visite, fiche Word (téléchargement .doc + copie), onglets Méthode, Données et Validation. |
 | Fiabiliser (30/10/2026, suite) | **Fait** : classement des valeurs qui pèsent le plus + « Je valide » ; banc de validation (cas de référence, biais, nuage, export / import) ; correction climatique des factures. Le haut du classement pour la maison type : rendement de la chaudière actuelle, effet de la régulation, rendement condensation, prix et PCS/PCI du gaz, U des murs par défaut. **Émile n'a pas encore pu fusionner (pas d'accès à GitHub ce jour-là)** : tout est sur la PR #2. |
-| Vue client (01/11/2026) | **Fait** : bouton « Vue client » : résultat en clair (fourchette, facture, étiquette, précision), où part l'énergie, ce que nous recommandons (✅ puis 🟠, mots simples, économie, coût TTC hors aides, remboursé en…), ce qui ne vaut pas le coup, programme conseillé (cascade), prochaines étapes (visite, factures, aides citées sans montant, devis) ; « Préparé par » ; Imprimer / PDF (A4, 2 pages) ; texte prêt pour un mail. Vouvoiement (document client). Toujours sur la PR #2 : **Émile ne peut fusionner que le lundi 2 novembre**. |
-| Photovoltaïque (01/11/2026) | **Fait** (Émile : « enquille la suite ») : direction du faîtage lue sur le contour, vignette « Toiture solaire » (kWc posables, pans retenus / écartés), question « Panneaux photovoltaïques » (aucun / déjà installés), action « Panneaux photovoltaïques » (taille à la meilleure VAN, production, part consommée sur place, vente du surplus à tarif fixe, détail du calcul), dernière étape des bouquets, fiche Word, vue client et mail (« vente du surplus comprise », prime à l'autoconsommation citée sans montant), onglet Méthode (étape 9 + exemple). 32 valeurs « exemple » du moteur (+ l'allongement minimal de la carte) à vérifier : productibles par zone (**PVGIS**), facteurs d'orientation, **tarif de vente du surplus** (CRE / EDF OA), TVA (taux réduits possibles), coûts (repris de la boîte à outils `1a601bb`, `pv-toiture`). Toujours sur la PR #2. |
-| À faire ensuite (au choix d'Émile) | 1) fusionner la PR #2, lancer le test de faisabilité et l'outil sur de vraies adresses ; 2) saisir 3 à 5 cas de référence (anciens audits, sans nom) et valider le haut de « À vérifier en priorité » (et les valeurs du photovoltaïque) ; 3) bouton « Approfondir » vers la boîte à outils (à valider par Émile : il écrira des clés `bao.*`) ; 4) aides chiffrées (CEE, MaPrimeRénov' : barèmes à sourcer), DJU par station, ombres sur le toit (hauteur des voisins de la BD TOPO) ; 5) passer à MapLibre 6 (6.16.0 publiée le 25/10/2026, guide de migration à lire). |
+| Vue client (01/11/2026) | **Fait** : bouton « Vue client » : résultat en clair (fourchette, facture, étiquette, précision), où part l'énergie, ce que nous recommandons (✅ puis 🟠, mots simples, économie, coût TTC hors aides, remboursé en…), ce qui ne vaut pas le coup, programme conseillé (cascade), prochaines étapes (visite, factures, aides citées sans montant, devis) ; « Préparé par » ; Imprimer / PDF (A4, 2 pages) ; texte prêt pour un mail. Vouvoiement (document client). |
+| Photovoltaïque (01/11/2026) | **Fait** (Émile : « enquille la suite ») : direction du faîtage lue sur le contour, vignette « Toiture solaire » (kWc posables, pans retenus / écartés), question « Panneaux photovoltaïques » (aucun / déjà installés), action « Panneaux photovoltaïques » (taille à la meilleure VAN, production, part consommée sur place, vente du surplus à tarif fixe, détail du calcul), dernière étape des bouquets, fiche Word, vue client et mail (« vente du surplus comprise », prime à l'autoconsommation citée sans montant), onglet Méthode (étape 9 + exemple). 32 valeurs « exemple » du moteur (+ l'allongement minimal de la carte) à vérifier : productibles par zone (**PVGIS**), facteurs d'orientation, **tarif de vente du surplus** (CRE / EDF OA), TVA (taux réduits possibles), coûts (repris de la boîte à outils `1a601bb`, `pv-toiture`). **PR #2 fusionnée par Émile le 02/11/2026** : tout ce qui précède est en ligne. |
+| Retours de relecture (02/11/2026) | Émile a fait relire le site par Gemini ; Émile : « fait tout ». **Fait** : mitoyenneté selon la hauteur du voisin ; plusieurs bâtiments ensemble (Maj + clic ou « + Bâtiment ») ; altitude (DJU, T base) ; ombres des voisins sur les panneaux ; aides estimées en % ; alertes décret tertiaire et BACS (encart Réglementation, fiche, vue client, mail) ; « ⓘ d'où ça vient ? » sur les vignettes ; sauvegarde / import JSON complet ; fiche Word avec k de calage et déperditions. **Écarté** : DJU base 15 / 16 pour les apports gratuits (la base 18 suppose déjà ≈ 2 °C d'apports : mesurer le biais avec les cas de référence avant de corriger) ; appel direct à PVGIS (sans doute bloqué par le navigateur, H). Nouvelles valeurs à vérifier : altitudes de référence et gradients, règle d'ombre, seuils réglementaires. Sur une nouvelle PR, à fusionner par Émile. |
+| À faire ensuite (au choix d'Émile) | 1) fusionner la PR #2, lancer le test de faisabilité et l'outil sur de vraies adresses ; 2) saisir 3 à 5 cas de référence (anciens audits, sans nom) et valider le haut de « À vérifier en priorité » (et les valeurs du photovoltaïque) ; 3) bouton « Approfondir » vers la boîte à outils (à valider par Émile : il écrira des clés `bao.*`) ; 4) aides chiffrées par action (CEE, MaPrimeRénov' : barèmes à sourcer), DJU par station, apports gratuits si les cas de référence montrent un biais ; 5) passer à MapLibre 6 (6.16.0 publiée le 25/10/2026, guide de migration à lire). |

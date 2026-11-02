@@ -15,7 +15,9 @@
 
   let carte = null, rappels = {}, fond = 'plan', en3d = true;
   let batiments = {};        // id → { id, contour, lu, h }
-  let selection = null;      // bâtiment choisi
+  let selection = null;      // bâtiment choisi (le premier cliqué)
+  let groupe = [];           // bâtiments choisis ensemble (Maj + clic, ou bouton « + Bâtiment »)
+  let ajout = false;         // mode « ajouter un bâtiment » (téléphone, tablette)
   let pret = false, aFaireQuandPret = [];
   let tuilesPlanRecues = false, erreursPlan = 0;
   const sources = {};
@@ -139,7 +141,8 @@
     try {
       carte = new maplibregl.Map({
         container: 'carte', style: style(), center: [2.4, 46.6], zoom: 5, pitch: 0, maxPitch: 70,
-        attributionControl: { compact: true }, dragRotate: true
+        attributionControl: { compact: true }, dragRotate: true,
+        boxZoom: false // Maj + clic sert à ajouter un bâtiment, pas à zoomer
       });
     } catch (e) {
       indisponible('ton navigateur ne peut pas afficher la carte 3D (WebGL)');
@@ -166,7 +169,9 @@
     });
     carte.on('click', function (e) {
       const f = carte.queryRenderedFeatures(e.point, { layers: ['batiments-3d', 'selection-3d'] })[0];
-      if (f && batiments[f.properties.id]) choisir(batiments[f.properties.id], null);
+      const b = f && batiments[f.properties.id];
+      if (b && selection && (ajout || (e.originalEvent && e.originalEvent.shiftKey))) basculer(b);
+      else if (b) choisir(b, null);
       else chargerEtChoisir(e.lngLat.lng, e.lngLat.lat, null);
     });
     carte.on('mousemove', 'batiments-3d', function () { carte.getCanvas().style.cursor = 'pointer'; });
@@ -195,7 +200,7 @@
         type: 'FeatureCollection',
         features: Object.keys(batiments).map(function (id) { return polygone(batiments[id], batiments[id].h); })
       });
-      carte.setFilter('batiments-3d', selection ? ['!=', ['get', 'id'], selection.id] : null);
+      carte.setFilter('batiments-3d', groupe.length ? ['!', ['in', ['get', 'id'], ['literal', groupe.map(function (b) { return b.id; })]]] : null);
     });
   }
 
@@ -214,7 +219,7 @@
       if (!contour) return null;
       const lu = C.lireBatimentBdTopo(f.properties);
       const id = lu.id || ('b' + contour[0][0].toFixed(6) + '_' + contour[0][1].toFixed(6));
-      return { id: id, contour: contour, lu: lu, h: hauteurDessin(lu) };
+      return { id: id, contour: contour, lu: lu, h: hauteurDessin(lu), altitude: C.altitudeBatiment(f.properties, f.geometry) };
     }).filter(Boolean);
     liste.forEach(function (b) { batiments[b.id] = b; });
     majBatiments();
@@ -246,16 +251,16 @@
     });
   }
 
-  function dessinerSelection(b, cotes) {
+  function dessinerSelection(liste, cotes) {
     quandPret(function () {
-      carte.getSource('selection').setData({ type: 'FeatureCollection', features: [polygone(b, b.h)] });
+      carte.getSource('selection').setData({ type: 'FeatureCollection', features: liste.map(function (b) { return polygone(b, b.h); }) });
       carte.getSource('mitoyen').setData({
         type: 'FeatureCollection',
         features: (cotes || []).filter(function (c) { return c.mitoyen; }).map(function (c) {
           return { type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates: [c.debut, c.fin] } };
         })
       });
-      carte.setFilter('batiments-3d', ['!=', ['get', 'id'], b.id]);
+      carte.setFilter('batiments-3d', ['!', ['in', ['get', 'id'], ['literal', liste.map(function (b) { return b.id; })]]]);
     });
   }
 
@@ -279,24 +284,52 @@
 
   function choisir(b, adresse) {
     selection = b;
+    groupe = [b];
+    envoyer(adresse, false);
     const centre = C.centre(b.contour);
-    const voisins = Object.keys(batiments).map(function (id) { return batiments[id]; }).filter(function (x) {
-      return x.id !== b.id && C.distanceM(C.centre(x.contour), centre, R) < 120;
-    }).map(function (x) { return x.contour; });
-    const mit = C.mitoyennete(b.contour, voisins, R, V.toleranceMitoyen.valeur);
-    const surfaceSol = C.surfaceSolM2(b.contour, R);
-    const est = C.estimerSurface(surfaceSol, b.lu.hauteur, b.lu.etages, V.hauteurEtage.valeur);
-    const faitage = C.orientationFaitage(b.contour, R, V.allongementFaitage.valeur);
-    dessinerSelection(b, mit.cotes);
-    cadrer(b.contour);
-    rappels.surBatiment({
-      id: b.id, lon: centre[0], lat: centre[1], contour: b.contour, hauteurDessin: b.h, cotes: mit.cotes,
-      surfaceSol: surfaceSol, perimetre: mit.perimetre, perimetreExpose: mit.expose, partMitoyenne: mit.part,
-      hauteur: b.lu.hauteur, niveaux: est.niveaux, origineNiveaux: est.origineNiveaux, surfacePlancher: est.surfacePlancher,
-      orientationFaitage: faitage ? faitage.angle : null, bdtopo: b.lu, adresse: adresse
-    });
     if (!adresse) adresseDuPoint(centre[0], centre[1]).then(function (a) { if (a && selection === b && rappels.surAdresse) rappels.surAdresse(a); });
     complements(centre[0], centre[1], adresse, b);
+  }
+
+  // Maj + clic (ou mode « + Bâtiment ») : ajoute ou retire un bâtiment de l'ensemble choisi.
+  function basculer(b) {
+    const i = groupe.indexOf(b);
+    if (i >= 0 && groupe.length > 1) groupe.splice(i, 1);
+    else if (i < 0) groupe.push(b);
+    if (groupe.indexOf(selection) < 0) selection = groupe[0];
+    envoyer(null, true);
+  }
+
+  // Lit l'ensemble choisi sur la carte (calculs dans carte/calcul.js) et le passe au moteur.
+  function envoyer(adresse, ajoutGroupe) {
+    const ids = groupe.map(function (x) { return x.id; });
+    const centreSel = C.centre(selection.contour);
+    const voisins = Object.keys(batiments).map(function (id) { return batiments[id]; }).filter(function (x) {
+      return ids.indexOf(x.id) < 0 && C.distanceM(C.centre(x.contour), centreSel, R) < 120 + 40 * (groupe.length - 1);
+    }).map(function (x) { return { contour: x.contour, hauteur: x.lu.hauteur || null }; });
+    const ens = C.analyserEnsemble(groupe.map(function (x) { return { contour: x.contour, hauteur: x.lu.hauteur || x.h }; }),
+      voisins, R, V.toleranceMitoyen.valeur);
+    const surf = C.surfacesEnsemble(groupe.map(function (x) { return { contour: x.contour, hauteurLue: x.lu.hauteur, etages: x.lu.etages }; }),
+      R, V.hauteurEtage.valeur);
+    const p = groupe[surf.principal];
+    const est = C.estimerSurface(C.surfaceSolM2(p.contour, R), p.lu.hauteur, p.lu.etages, V.hauteurEtage.valeur);
+    const faitage = C.orientationFaitage(p.contour, R, V.allongementFaitage.valeur);
+    const plusieurs = groupe.length > 1;
+    const centre = C.centre(p.contour);
+    dessinerSelection(groupe, ens.cotes);
+    if (!ajoutGroupe) cadrer(p.contour);
+    rappels.surBatiment({
+      id: ids.join('+'), ids: ids, nombre: groupe.length, ajout: !!ajoutGroupe,
+      lon: centre[0], lat: centre[1], contour: p.contour, contours: groupe.map(function (x) { return x.contour; }),
+      hauteurDessin: p.h, cotes: ens.cotes,
+      surfaceSol: ens.surfaceSol, perimetre: ens.perimetre, perimetreExpose: ens.perimetreExpose, perimetreFacade: ens.perimetreFacade,
+      partMitoyenne: ens.partMitoyenne,
+      hauteur: plusieurs ? ens.hauteur : p.lu.hauteur, niveaux: plusieurs ? surf.niveaux : est.niveaux,
+      origineNiveaux: plusieurs ? 'ensemble' : est.origineNiveaux, surfacePlancher: plusieurs ? surf.surfacePlancher : est.surfacePlancher,
+      orientationFaitage: faitage ? faitage.angle : null,
+      masques: C.masquesSolaires(p.contour, p.lu.hauteur || p.h, voisins, R, V.rayonMasques.valeur),
+      altitude: p.altitude, bdtopo: p.lu, adresse: adresse
+    });
   }
 
   /* ---------- Compléments : BDNB, DPE, photos ---------- */
@@ -446,6 +479,12 @@
     $('#recentrer').addEventListener('click', function () {
       if (selection) cadrer(selection.contour);
     });
+    const plus = $('#ajout-batiment');
+    if (plus) plus.addEventListener('click', function () {
+      ajout = !ajout;
+      this.setAttribute('aria-pressed', String(ajout));
+      if (ajout && rappels.surMessage) rappels.surMessage('Clique sur les bâtiments à ajouter (ou à retirer) : ils comptent comme un seul bâtiment.');
+    });
   }
 
   /* ---------- Ce que voit le reste de l'outil ---------- */
@@ -463,14 +502,17 @@
     // Réaffiche un bâtiment gardé dans le navigateur (sans relancer le calcul).
     afficherSauvegarde: function (b) {
       if (!b || !b.contour) return;
-      selection = { id: b.id || 'sauve', contour: b.contour, h: b.hauteurDessin || 2 * V.hauteurEtage.valeur, lu: {} };
-      dessinerSelection(selection, b.cotes);
+      const h = b.hauteurDessin || 2 * V.hauteurEtage.valeur;
+      groupe = (b.contours || [b.contour]).map(function (c, i) { return { id: (b.ids && b.ids[i]) || 'sauve' + i, contour: c, h: h, lu: {} }; });
+      selection = groupe[0];
+      dessinerSelection(groupe, b.cotes);
       marquerPoint(b.lon, b.lat);
       cadrer(b.contour);
       quandPret(function () { chargerAutour(b.lon, b.lat); });
     },
     effacer: function () {
       selection = null;
+      groupe = [];
       quandPret(function () {
         ['selection', 'mitoyen', 'point'].forEach(function (s) { carte.getSource(s).setData(vide()); });
         carte.setFilter('batiments-3d', null);

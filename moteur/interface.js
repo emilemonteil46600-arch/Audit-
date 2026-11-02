@@ -16,7 +16,7 @@
   /* ---------- L'état, gardé dans ton navigateur ----------
      saisies : tes réponses (prioritaires) ; carte : ce qui vient de la carte, de la BDNB, des DPE. */
   function etatVide() {
-    return { version: 1, saisies: {}, carte: {}, factures: {}, djuFactures: null, batiment: null, complements: {}, bouquet: null };
+    return { version: 1, saisies: {}, carte: {}, factures: {}, djuFactures: null, aides: 0, batiment: null, complements: {}, bouquet: null };
   }
   let etat = Object.assign(etatVide(), F.lire('etat.v1', null) || {});
   let modifs = F.lire('donnees.v1', {}) || {};      // tes valeurs (onglet Données)
@@ -25,7 +25,7 @@
   let signature = F.lire('signature.v1', '') || ''; // « Préparé par » de la vue client (reste dans ton navigateur)
   let r = null;
 
-  function options() { return { validees: validees, djuFactures: etat.djuFactures }; }
+  function options() { return { validees: validees, djuFactures: etat.djuFactures, aides: etat.aides || 0 }; }
   function aujourdhui() { return new Date().toISOString().slice(0, 10); }
   function copie(objet) { return JSON.parse(JSON.stringify(objet)); }
 
@@ -74,9 +74,10 @@
   function texteToit(p) {
     const pans = p.pvToiture.pans, retenus = pans.filter(function (x) { return x.equipe; });
     const ecartes = pans.filter(function (x) { return !x.equipe; });
-    if (p.toitureType === 'terrasse') return 'toit plat, modules orientés au mieux (' + pct(pans[0].facteur) + ' d’un pan plein sud)';
-    if (pans[0].azimut === null) return 'orientation inconnue : ' + pct(pans[0].facteur) + ' d’un pan plein sud supposé';
-    return retenus.map(function (x) { return 'pan ' + x.nom + ' (' + pct(x.facteur) + ')'; }).join(' et ') +
+    const ombre = function (x) { return x.ombre >= 0.005 ? ', ombre − ' + pct(x.ombre) : ''; };
+    if (p.toitureType === 'terrasse') return 'toit plat, modules orientés au mieux (' + pct(pans[0].orientation) + ' d’un pan plein sud' + ombre(pans[0]) + ')';
+    if (pans[0].azimut === null) return 'orientation inconnue : ' + pct(pans[0].orientation) + ' d’un pan plein sud supposé' + ombre(pans[0]);
+    return retenus.map(function (x) { return 'pan ' + x.nom + ' (' + pct(x.orientation) + ombre(x) + ')'; }).join(' et ') +
       (ecartes.length ? ' ; pan ' + ecartes.map(function (x) { return x.nom; }).join(', ') + ' écarté' : '');
   }
 
@@ -128,10 +129,31 @@
       '<div id="b-dpe"></div><div id="b-photos"></div>';
   }
 
-  function vignette(icone, nom, valeur, origine, detail) {
+  function vignette(icone, nom, valeur, origine, detail, source) {
     return '<div class="vignette">' + ico(icone, 'vignette-ico') + '<div class="vignette-texte"><span class="vignette-nom">' + esc(nom) + '</span>' +
-      '<b>' + valeur + '</b>' + (detail ? '<small>' + esc(detail) + '</small>' : '') + '</div>' + badgeOrigine(origine) + '</div>';
+      '<b>' + valeur + '</b>' + (detail ? '<small>' + esc(detail) + '</small>' : '') + '</div>' + badgeOrigine(origine) +
+      (source ? '<button type="button" class="vignette-i" data-info aria-expanded="false" aria-label="D’où ça vient ?" title="D’où ça vient ?">' + ico('info') + '</button>' +
+        '<p class="vignette-source" hidden>' + esc(source) + '</p>' : '') + '</div>';
   }
+
+  // « D'où ça vient ? » : la source de chaque vignette, en clair.
+  const SOURCES_VIGNETTES = {
+    surfaceSol: 'Calculée sur le contour du bâtiment de l’IGN (BD TOPO) : surface du polygone vu du ciel, murs compris.',
+    niveaux: 'Nombre d’étages de la BD TOPO s’il existe, sinon hauteur du bâtiment ÷ 3 m (H). Tu peux le corriger dans « saisie sans carte ».',
+    plancher: 'Surface au sol × niveaux (surface brute). La surface chauffée en est une part qui dépend de l’usage (onglet Données).',
+    hauteur: 'Hauteur du bâtiment dans la BD TOPO (mesurée par l’IGN), sinon niveaux × 3 m.',
+    mitoyens: 'Calculé sur la carte : un côté collé à un voisin (à moins de 1 m) ne perd presque rien, sur la hauteur du voisin. Au-dessus d’un voisin plus bas, le mur compte comme façade.',
+    epoque: 'Année de construction de la BDNB (CSTB), sinon d’un DPE ADEME tout proche, sinon de la BD TOPO ; sinon 1948 – 1974 supposé.',
+    climat: 'Ton département donne la zone climatique (table de l’outil, H) ; DJU et température de base de la zone, corrigés de l’altitude du bâtiment si la carte la donne.',
+    usage: 'Usage principal de la BD TOPO et nombre de logements ; sinon déduit de la surface. À vérifier : c’est souvent le point à corriger.',
+    toitSolaire: 'Calculé sur le contour : direction du faîtage (grands côtés du bâtiment), pans de 35°, part utilisable, ombres des voisins plus hauts.',
+    materiauxMurs: 'Matériaux des murs de la BD TOPO (issus des fichiers fonciers) : indicatif, souvent incomplet.',
+    materiauxToit: 'Matériaux de la toiture de la BD TOPO (fichiers fonciers) : tuiles → combles, béton → toit plat (H).',
+    logements: 'Nombre de logements de la BD TOPO.',
+    energie: 'Énergie de chauffage de la BDNB (CSTB), qui croise DPE, fichiers fonciers et réseaux.',
+    mursBdnb: 'Matériau des murs de la BDNB (CSTB).',
+    ensemble: 'Les bâtiments choisis ensemble (Maj + clic) : surfaces additionnées, les murs qui les séparent ne comptent pas.'
+  };
 
   function afficherBatiment() {
     const b = etat.batiment || {}, e = entrees(), comp = etat.complements || {};
@@ -144,25 +166,30 @@
     if (r && r.params) {
       const p = r.params, o = r.origines, g = r.modele.geometrie;
       const ori = function (cle) { return e[cle] ? e[cle].origine : 'deduite'; };
-      v += vignette('cube', 'Surface au sol', nb(sig(p.surfaceSol, 3)) + ' m²', e.surfaceSol ? ori('surfaceSol') : 'deduite');
+      const S = SOURCES_VIGNETTES;
+      if (b.nombre > 1) v += vignette('calque', 'Ensemble', nb(b.nombre) + ' bâtiments', 'carte', 'comptés comme un seul (Maj + clic pour modifier)', S.ensemble);
+      v += vignette('cube', 'Surface au sol', nb(sig(p.surfaceSol, 3)) + ' m²', e.surfaceSol ? ori('surfaceSol') : 'deduite', '', S.surfaceSol);
       v += vignette('immeuble', 'Niveaux', nb(p.niveaux), o.niveaux.origine,
-        b.origineNiveaux === 'bdtopo' ? 'nombre d’étages BD TOPO' : b.origineNiveaux === 'hauteur' && !etat.saisies.niveaux ? 'hauteur ÷ ' + nb(V.hauteurEtage.valeur) + ' m (H)' : o.niveaux.detail);
-      v += vignette('plan', 'Surface de plancher', nb(sig(p.surfacePlancher, 3)) + ' m²', o.surface.origine, '≈ ' + nb(sig(g.surfaceChauffee, 2)) + ' m² chauffés');
-      v += vignette('toit', 'Hauteur', nb(p.hauteur, 1) + ' m', e.hauteur ? ori('hauteur') : 'deduite', e.hauteur ? '' : 'niveaux × ' + nb(V.hauteurEtage.valeur) + ' m');
+        b.origineNiveaux === 'bdtopo' ? 'nombre d’étages BD TOPO' : b.origineNiveaux === 'ensemble' ? 'moyenne de l’ensemble' :
+          b.origineNiveaux === 'hauteur' && !etat.saisies.niveaux ? 'hauteur ÷ ' + nb(V.hauteurEtage.valeur) + ' m (H)' : o.niveaux.detail, S.niveaux);
+      v += vignette('plan', 'Surface de plancher', nb(sig(p.surfacePlancher, 3)) + ' m²', o.surface.origine, '≈ ' + nb(sig(g.surfaceChauffee, 2)) + ' m² chauffés', S.plancher);
+      v += vignette('toit', 'Hauteur', nb(p.hauteur, 1) + ' m', e.hauteur ? ori('hauteur') : 'deduite', e.hauteur ? '' : 'niveaux × ' + nb(V.hauteurEtage.valeur) + ' m', S.hauteur);
       v += vignette('mur', 'Murs mitoyens', pct(g.partMitoyenne), e.perimetreExpose ? ori('perimetreExpose') : (e.mitoyennete ? 'saisie' : 'deduite'),
-        nb(sig(p.perimetreExpose, 3)) + ' m de façade exposée');
-      v += vignette('sablier', 'Époque', esc(nomPeriode(p.periode)), o.periode.origine, e.annee ? 'construit en ' + e.annee.valeur : o.periode.detail);
-      v += vignette('flocon', 'Climat', 'zone ' + esc(p.zone), o.climat.origine, 'DJU ' + nb(p.dju) + ' · T base ' + nb(p.tbase) + ' °C');
+        nb(sig(g.facades, 3)) + ' m² de façade exposée', S.mitoyens);
+      v += vignette('sablier', 'Époque', esc(nomPeriode(p.periode)), o.periode.origine, e.annee ? 'construit en ' + e.annee.valeur : o.periode.detail, S.epoque);
+      v += vignette('flocon', 'Climat', 'zone ' + esc(p.zone), o.climat.origine,
+        'DJU ' + nb(sig(p.dju, 3)) + ' · T base ' + nb(p.tbase, p.altitude === null ? 0 : 1) + ' °C' + (p.altitude === null ? '' : ' · ' + nb(p.altitude) + ' m d’altitude'), S.climat);
       v += vignette('soleil', 'Toiture solaire', '≈ ' + kwc(p.pvMax), o.toitureSolaire.origine,
-        'posables · ' + (p.photovoltaique === 'existant' ? 'panneaux déjà installés' : texteToit(p)));
-      v += vignette('bureau', 'Usage', esc(nomUsageBat(p.usage)), o.usage.origine, o.usage.detail);
+        'posables · ' + (p.photovoltaique === 'existant' ? 'panneaux déjà installés' : texteToit(p)), S.toitSolaire);
+      v += vignette('bureau', 'Usage', esc(nomUsageBat(p.usage)), o.usage.origine, o.usage.detail, S.usage);
     }
     const lu = b.bdtopo || {}, bd = comp.bdnb;
-    if (lu.murs && lu.murs.length) v += vignette('mur', 'Matériaux des murs', esc(lu.murs.join(', ')), 'carte', 'fichiers fonciers (H)');
-    if (lu.toiture && lu.toiture.length) v += vignette('toit', 'Toiture', esc(lu.toiture.join(', ')), 'carte', lu.toitureType ? 'donc ' + lu.toitureType + ' (H)' : '');
-    if (lu.logements) v += vignette('maison', 'Logements', nb(lu.logements), 'carte');
-    if (bd && bd.energieTexte) v += vignette('flamme', 'Énergie de chauffage', esc(bd.energieTexte), 'bdnb');
-    if (bd && bd.murs) v += vignette('mur', 'Murs (BDNB)', esc(bd.murs), 'bdnb');
+    const S2 = SOURCES_VIGNETTES;
+    if (lu.murs && lu.murs.length) v += vignette('mur', 'Matériaux des murs', esc(lu.murs.join(', ')), 'carte', 'fichiers fonciers (H)', S2.materiauxMurs);
+    if (lu.toiture && lu.toiture.length) v += vignette('toit', 'Toiture', esc(lu.toiture.join(', ')), 'carte', lu.toitureType ? 'donc ' + lu.toitureType + ' (H)' : '', S2.materiauxToit);
+    if (lu.logements) v += vignette('maison', 'Logements', nb(lu.logements), 'carte', '', S2.logements);
+    if (bd && bd.energieTexte) v += vignette('flamme', 'Énergie de chauffage', esc(bd.energieTexte), 'bdnb', '', S2.energie);
+    if (bd && bd.murs) v += vignette('mur', 'Murs (BDNB)', esc(bd.murs), 'bdnb', '', S2.mursBdnb);
     $('#b-vignettes').innerHTML = v;
 
     // Champs « sans carte » : on ne touche pas au champ en cours de saisie.
@@ -319,6 +346,9 @@
       '<div class="facture facture-dju"><label class="champ"><span class="etiquette-champ">DJU de l’année des factures <small>(facultatif)</small></span>' +
       '<input type="text" inputmode="decimal" data-dju="1" autocomplete="off"></label>' +
       '<div class="facture-info"><small>Base 18 °C, station météo la plus proche. Vide = année normale.</small><span data-dju-normal></span></div></div>' +
+      '<div class="facture facture-dju"><label class="champ"><span class="etiquette-champ">Aides estimées <small>(% du coût des travaux, facultatif)</small></span>' +
+      '<input type="text" inputmode="decimal" data-aides="1" autocomplete="off" placeholder="0 = hors aides"></label>' +
+      '<div class="facture-info"><small>CEE, MaPrimeRénov’, Fonds chaleur… : ton estimation. Les temps de retour sont calculés après aides.</small></div></div>' +
       '<div id="f-bilan"></div><div id="f-cas"></div>';
   }
 
@@ -336,6 +366,8 @@
       $('[data-calcul="' + en.id + '"]', bloc).innerHTML = (utilisee ? 'calcul : ' + energie(utilisee.facture) : 'pas utilisée par le calcul') +
         (k ? ' · <b class="k ' + (k < 0.7 || k > 1.3 ? 'k-ecart' : 'k-ok') + '">k = ' + nb(k, 2) + '</b>' : '');
     });
+    const champAides = $('[data-aides]');
+    if (champAides !== document.activeElement) champAides.value = etat.aides ? nb(etat.aides * 100) : '';
     const champDju = $('[data-dju]');
     if (champDju !== document.activeElement) {
       champDju.value = etat.djuFactures ? nb(etat.djuFactures) : '';
@@ -452,7 +484,8 @@
       'Coût : ' + nb(sig(q.valeur, 3)) + ' × ' + nb(d.v(cle + '.bas')) + ' à ' + nb(d.v(cle + '.haut')) + ' € HT × (1 + ' + pct(d.v('eco.frais')) + ' frais) × (1 + ' +
       nb(a.cout.tva * 100, 1) + ' % TVA) = ' + euros(a.cout.bas) + ' à ' + euros(a.cout.haut) + ' TTC\n' +
       (a.pv ? detailPV(a) : 'Économie : ' + energie(a.gainEf) + '/an d’énergie finale → ' + euros(a.economie) + '/an (année 1)\n') +
-      'Retour brut = ' + euros(a.cout.moyen) + ' / ' + euros(a.economie) + ' = ' + ans(a.trb) + '\n' +
+      (a.cout.aide ? 'Aides estimées : − ' + pct(a.cout.aide) + ' → ' + euros(a.cout.net.moyen) + ' en moyenne\n' : '') +
+      'Retour brut = ' + euros(a.cout.net.moyen) + ' / ' + euros(a.economie) + ' = ' + ans(a.trb) + '\n' +
       'Retour actualisé (prix de l’énergie + ' + pct(d.v('eco.inflation')) + '/an, actualisation ' + pct(d.v('eco.actualisation')) + ') = ' + ans(a.tra) + '\n' +
       'VAN sur ' + a.duree + ' ans = ' + euros(a.van);
   }
@@ -483,7 +516,8 @@
       (a.pv ? '<p class="action-pv">' + ico('soleil') + '<span>Production <b>' + energie(a.pv.production) + '/an</b> : ' +
         energie(a.pv.autoconsommation) + ' consommés sur place (' + pct(a.pv.taux) + '), ' + energie(a.pv.surplus) + ' vendus (' +
         euros(a.revente) + '/an)</span></p>' : '') +
-      '<dl class="action-chiffres"><div><dt>Coût TTC</dt><dd>' + plageEuros(a.cout.bas, a.cout.haut) + '</dd></div>' +
+      '<dl class="action-chiffres"><div><dt>Coût TTC</dt><dd>' + plageEuros(a.cout.bas, a.cout.haut) +
+      (a.cout.aide ? '<small class="apres-aides">après aides : ' + plageEuros(a.cout.net.bas, a.cout.net.haut) + '</small>' : '') + '</dd></div>' +
       '<div><dt>Retour brut</dt><dd>' + plageAns(a.trbBas, a.trbHaut) + '</dd></div>' +
       '<div><dt>Retour actualisé</dt><dd>' + ans(a.tra) + '</dd></div></dl>' +
       G.retour(a.tra, a.duree, seuil) +
@@ -506,7 +540,8 @@
       '<div class="compteurs"><span class="c-afaire">✅ ' + compte('afaire') + ' à faire</span><span class="c-discuter">🟠 ' + compte('discuter') +
       ' à discuter</span><span class="c-non">❌ ' + compte('non') + ' pas rentable</span></div></div>' +
       '<p class="aide">Chaque action seule, sur le bâtiment actuel' + (r.calage.actif ? ' calé sur tes factures' : '') +
-      '. Coûts TTC hors aides, prix de l’énergie d’exemple. La jauge compare le temps de retour actualisé à la durée de vie.</p>' +
+      '. Coûts TTC ' + (r.aides ? 'avec ' + pct(r.aides) + ' d’aides estimées (onglet Factures)' : 'hors aides (tu peux estimer les aides dans l’onglet Factures)') +
+      ', prix de l’énergie d’exemple. La jauge compare le temps de retour actualisé à la durée de vie.</p>' +
       '<div class="actions">' + retenues.map(function (a) { return carteAction(a, false); }).join('') + '</div>' +
       (variantes.length ? '<details class="plus"><summary>Variantes étudiées (' + variantes.length + ')</summary><div class="actions">' +
         variantes.map(function (a) { return carteAction(a, true); }).join('') + '</div></details>' : '') +
@@ -530,7 +565,7 @@
         '<span class="bouquet-nom">' + esc(b.nom) + '</span>' +
         '<span class="bouquet-icones">' + b.etapes.map(function (e) { return ico(e.icone); }).join('') + '</span>' +
         '<span class="bouquet-gain">− ' + nb(b.gainPart * 100) + ' %</span>' +
-        '<span class="bouquet-ligne">' + euros(b.economie, 2) + ' /an · ' + plageEuros(b.cout.bas, b.cout.haut) + ' TTC</span>' +
+        '<span class="bouquet-ligne">' + euros(b.economie, 2) + ' /an · ' + plageEuros(b.cout.net.bas, b.cout.net.haut) + (b.cout.aide ? ' après aides' : ' TTC') + '</span>' +
         '<span class="bouquet-ligne">Retour ' + ans(b.trb) + ' brut · ' + ans(b.tra) + ' actualisé</span>' +
         (logement ? '<span class="bouquet-etiquettes"><i class="mini-dpe dpe-' + b.avant.etiquette.classe.toLowerCase() + '">' + b.avant.etiquette.classe + '</i>' +
           ico('fleche') + '<i class="mini-dpe dpe-' + b.apres.etiquette.classe.toLowerCase() + '">' + b.apres.etiquette.classe + '</i></span>' : '') +
@@ -557,8 +592,31 @@
     return '<section class="bloc section-bouquets"><div class="section-tete"><h2>' + ico('calque') + 'Bouquets de travaux</h2></div>' +
       '<p class="aide">Calculés dans l’ordre : l’enveloppe d’abord, puis la ventilation et les systèmes' +
       (r.bouquets.some(function (b) { return b.ids.indexOf('pv') >= 0; }) ? ', et les panneaux en dernier (dimensionnés sur le bâtiment amélioré)' : '') +
-      '. Coûts TTC hors aides.</p>' +
+      '. Coûts TTC ' + (r.aides ? 'après ' + pct(r.aides) + ' d’aides estimées' : 'hors aides') + '.</p>' +
       '<div class="bouquets">' + cartes + '</div>' + detail + '</section>';
+  }
+
+  // Réglementation tertiaire (point 14 du moteur) : décret tertiaire et décret BACS.
+  function reglementation() {
+    if (!r.alertes || !r.alertes.length) return '';
+    const items = r.alertes.map(function (al) {
+      if (al.id === 'tertiaire') {
+        return '<div class="alerte-regl"><h3>' + ico('calque') + 'Décret tertiaire</h3>' +
+          '<p>Plus de 1 000 m² d’activité tertiaire : la consommation d’énergie finale doit baisser par rapport à une année de référence ' +
+          '(ici la consommation actuelle, ' + energie(al.reference) + '/an ; H : la vraie référence est une année ≥ 2010, à choisir sur OPERAT).</p>' +
+          '<ul class="trajectoire">' + al.objectifs.map(function (o) {
+            return '<li><b>' + o.annee + '</b><span>− ' + pct(o.baisse) + ' → ' + energie(o.cible) + '/an</span><em class="' + (o.bouquet ? 'ok' : 'ko') + '">' +
+              (o.bouquet ? 'atteint avec « ' + esc(o.nomBouquet) + ' »' : 'aucun bouquet ne l’atteint') + '</em></li>';
+          }).join('') + '</ul></div>';
+      }
+      return '<div class="alerte-regl"><h3>' + ico('thermostat') + 'Décret BACS (GTB)</h3>' +
+        '<p>Puissance de chauffage estimée ≈ <b>' + nb(sig(al.puissance, 2)) + ' kW</b> ' + (al.certain ? '> ' : 'proche de ') + nb(al.seuil) + ' kW : ' +
+        'une GTB de classe A ou B est ' + (al.certain ? 'obligatoire ' + (al.echeance === 2025 ? 'depuis 2025' : 'au 1er janvier 2027') :
+          'peut-être obligatoire au 1er janvier 2027 (vérifie la puissance sur la plaque)') + '. ' +
+        (al.regulation === 'performante' ? 'La régulation est déjà performante : vérifie sa classe.' : 'L’action « Programmer et réguler » n’est alors plus seulement une question de rentabilité.') + '</p></div>';
+    }).join('');
+    return '<section class="bloc section-regl"><div class="section-tete"><h2>' + ico('alerte') + 'Réglementation</h2></div>' + items +
+      '<p class="aide">Seuils repris de mémoire (onglet Données, groupe Réglementation) : à vérifier.</p></section>';
   }
 
   function visite() {
@@ -586,7 +644,7 @@
     el.innerHTML = '<div class="res-tete"><h2>Résultat</h2><span class="badge ' + (r.calage.actif ? 'valide' : 'info') + '">' +
       (r.calage.actif ? 'Calé sur tes factures' : 'Sans factures : estimation') + '</span>' +
       '<span class="res-fiab">' + G.fiabilite(r.fiabilite) + ' Fiabilité ' + esc(r.fiabilite) + ' (± ' + pct(r.rel) + ')</span></div>' +
-      kpis() + graphes() + preconisations() + bouquets() + visite() + avertissements();
+      kpis() + graphes() + reglementation() + preconisations() + bouquets() + visite() + avertissements();
   }
 
   /* ---------- Fiche d'une page pour Word ---------- */
@@ -629,11 +687,20 @@
       }).join('') +
       ligne(['Total (fourchette ' + fourchetteEnergie(t.ef, r.delta) + ')', '', nb(sig(t.ef, 2)), nb(sig(t.cout, 2))]) + '</table>' +
       '<p>' + (et ? 'Étiquette indicative : <b>' + et.classe + '</b> (' + nb(sig(r.resultat.ratios.ep5, 2)) + ' kWhEP/m², ' + nb(sig(r.resultat.ratios.co25, 2)) + ' kgCO₂/m²). ' : '') +
-      'Puissance de chauffage ≈ ' + nb(r.modele.puissance, 1) + ' kW. CO₂ ≈ ' + nb(t.co2 / 1000, 1) + ' t/an.</p>' +
-      '<h2>Préconisations</h2><table>' + ligne(['Action', 'Verdict', 'Gain', '€/an', 'Coût TTC', 'Retour brut', 'Retour actualisé', 'Durée de vie'], true) +
+      'Puissance de chauffage ≈ ' + nb(r.modele.puissance, 1) + ' kW. CO₂ ≈ ' + nb(t.co2 / 1000, 1) + ' t/an.' +
+      (r.calage.actif ? ' Calage : ' + Object.keys(r.calage.coefs).map(function (e) { return 'k ' + nomEnergie(e).toLowerCase() + ' = ' + nb(r.calage.coefs[e], 2); }).join(', ') +
+        (r.calage.djuFactures ? ' (factures d’une année à ' + nb(r.calage.djuFactures) + ' DJU)' : '') + '.' : '') + '</p>' +
+      '<p>Déperditions : ' + ['murs', 'vitrages', 'toiture', 'plancher', 'ponts', 'air'].map(function (k) {
+        return NOMS_PAROIS[k].toLowerCase() + ' ' + nb(sig(r.modele.deperditions[k], 2)) + ' W/K (' + pct(r.modele.deperditions.parts[k]) + ')';
+      }).join(', ') + ' ; total ' + nb(sig(r.modele.deperditions.total, 3)) + ' W/K.</p>' +
+      (r.alertes && r.alertes.length ? '<p><b>Réglementation :</b> ' + r.alertes.map(function (al) {
+        return al.id === 'tertiaire' ? 'décret tertiaire (' + al.objectifs.map(function (o) { return o.annee + ' : − ' + pct(o.baisse) + (o.bouquet ? ' atteint' : ' non atteint'); }).join(', ') + ')' :
+          'décret BACS, GTB classe A ou B ' + (al.certain ? 'obligatoire' : 'à vérifier') + ' (≈ ' + nb(sig(al.puissance, 2)) + ' kW)';
+      }).join(' ; ') + '.</p>' : '') +
+      '<h2>Préconisations</h2><table>' + ligne(['Action', 'Verdict', 'Gain', '€/an', r.aides ? 'Coût après aides' : 'Coût TTC', 'Retour brut', 'Retour actualisé', 'Durée de vie'], true) +
       retenues.map(function (a) {
         return ligne([a.def.nom, VERDICTS[a.verdict].texte, '− ' + nb(a.gainPart * 100) + ' %', nb(sig(a.economie, 2)),
-          nb(sig(a.cout.bas, 2)) + ' – ' + nb(sig(a.cout.haut, 2)), plageAns(a.trbBas, a.trbHaut), ans(a.tra), a.duree + ' ans']);
+          nb(sig(a.cout.net.bas, 2)) + ' – ' + nb(sig(a.cout.net.haut, 2)), plageAns(a.trbBas, a.trbHaut), ans(a.tra), a.duree + ' ans']);
       }).join('') + '</table>' +
       (deja.length ? '<p class="petit">Déjà fait : ' + deja.map(function (a) { return esc(a.def.nom) + ' (' + esc(a.etat.raison) + ')'; }).join(' ; ') + '.</p>' : '') +
       (choisi ? '<h2>Bouquet « ' + esc(choisi.nom) + ' »</h2><p>' + choisi.etapes.map(function (e) { return esc(e.nom); }).join(' → ') +
@@ -641,7 +708,8 @@
         ans(choisi.trb) + ' brut / ' + ans(choisi.tra) + ' actualisé' + (et ? ', étiquette ' + choisi.avant.etiquette.classe + ' → ' + choisi.apres.etiquette.classe : '') + '.</p>' : '') +
       '<h2>À vérifier en visite</h2><p>' + r.incertitude.contributions.filter(function (c) { return c.origine !== 'saisie'; }).slice(0, 4)
         .map(function (c) { return '<b>' + esc(c.nom) + '</b> : ' + esc(c.visite); }).join('<br>') + '</p>' +
-      '<p class="petit">Hypothèses : ' + r.exemples.length + ' valeurs d’exemple (prix de l’énergie, coûts, valeurs par défaut de l’époque) à confirmer. Coûts hors aides. ' +
+      '<p class="petit">Hypothèses : ' + r.exemples.length + ' valeurs d’exemple (prix de l’énergie, coûts, valeurs par défaut de l’époque) à confirmer. ' +
+      (r.aides ? 'Coûts après ' + pct(r.aides) + ' d’aides estimées (estimation, pas un engagement). ' : 'Coûts hors aides. ') +
       'Données : IGN BD TOPO, BAN, BDNB (CSTB), ADEME. Méthode : degrés-jours, U × A, rendements, temps de retour actualisé.</p></body></html>';
   }
 
@@ -880,6 +948,40 @@
     afficherValidation();
   }
 
+  // Tout ce qui est gardé dans ton navigateur, dans un seul fichier : valeurs modifiées, validées, cas, « Préparé par ».
+  function exporterTout() {
+    F.telecharger('audit-flash-sauvegarde_' + aujourdhui() + '.json', JSON.stringify({
+      format: 'audit-flash-sauvegarde', version: 1, exporte_le: aujourdhui(),
+      donnees: modifs, validees: validees, cas: cas, signature: signature
+    }, null, 2), 'application/json');
+  }
+
+  function importerTout(fichier) {
+    const lecteur = new FileReader();
+    lecteur.onload = function () {
+      try {
+        const c = JSON.parse(lecteur.result);
+        if (!c || c.format !== 'audit-flash-sauvegarde') { importerCas(fichier); return; }
+        Object.keys(c.donnees || {}).forEach(function (id) {
+          if (H.VALEURS.some(function (x) { return x.id === id; }) && isFinite(c.donnees[id])) modifs[id] = Number(c.donnees[id]);
+        });
+        Object.keys(c.validees || {}).forEach(function (id) { validees[id] = String(c.validees[id]); });
+        (Array.isArray(c.cas) ? c.cas : []).forEach(function (x) {
+          if (!x || !x.id || !x.entrees || !x.factures) return;
+          cas = cas.filter(function (y) { return y.id !== x.id; });
+          cas.push(x);
+        });
+        if (!signature && typeof c.signature === 'string') { signature = c.signature; F.ecrire('signature.v1', signature); }
+        F.ecrire('donnees.v1', modifs); F.ecrire('validees.v1', validees); F.ecrire('cas.v1', cas);
+        recalculer(); afficherDonnees();
+        F.toast('Sauvegarde importée : ' + Object.keys(c.donnees || {}).length + ' valeur(s) modifiée(s), ' + (c.cas || []).length + ' cas.');
+      } catch (e) {
+        F.toast('Fichier illisible : il faut une sauvegarde de l’Audit flash.');
+      }
+    };
+    lecteur.readAsText(fichier);
+  }
+
   function exporterCas() {
     if (!cas.length) { F.toast('Aucun cas à exporter.'); return; }
     F.telecharger('cas-audit-flash_' + aujourdhui() + '.json',
@@ -939,6 +1041,10 @@
     mettre('surfaceSol', b.surfaceSol);
     mettre('perimetre', b.perimetre);
     mettre('perimetreExpose', b.perimetreExpose);
+    mettre('perimetreFacade', b.perimetreFacade);
+    if (b.nombre > 1) mettre('surfacePlancher', b.surfacePlancher); // plusieurs bâtiments : somme des planchers
+    mettre('altitude', b.altitude);
+    if (b.masques && b.masques.length) mettre('masques', b.masques);
     mettre('hauteur', b.hauteur);
     mettre('niveaux', b.niveaux);
     mettre('orientationFaitage', b.orientationFaitage);
@@ -949,15 +1055,22 @@
     if (b.adresse) mettre('departement', b.adresse.departement);
     else if (etat.carte.departement) c.departement = etat.carte.departement; // en attendant l'adresse du point (H : même secteur)
     const garde = Object.keys(etat.saisies).length > 0;
+    if (b.ajout) {
+      // Bâtiment ajouté à l'ensemble : on garde ce que la BDNB et les DPE ont déjà donné.
+      Object.keys(etat.carte).forEach(function (k) { if (!c[k] && /bdnb|dpe/.test(etat.carte[k].origine)) c[k] = etat.carte[k]; });
+      if (!c.departement && etat.carte.departement) c.departement = etat.carte.departement;
+    } else {
+      etat.complements = {};
+    }
     etat.carte = c;
-    etat.complements = {};
     etat.batiment = {
-      id: b.id, lon: b.lon, lat: b.lat, contour: b.contour, cotes: b.cotes, hauteurDessin: b.hauteurDessin,
-      partMitoyenne: b.partMitoyenne, origineNiveaux: b.origineNiveaux, bdtopo: lu,
+      id: b.id, ids: b.ids, nombre: b.nombre || 1, lon: b.lon, lat: b.lat, contour: b.contour, contours: b.contours, cotes: b.cotes,
+      hauteurDessin: b.hauteurDessin, partMitoyenne: b.partMitoyenne, origineNiveaux: b.origineNiveaux, bdtopo: lu,
       adresse: b.adresse || (etat.batiment && etat.batiment.adresse) || null
     };
     recalculer();
-    if (garde) F.toast('Bâtiment choisi. Tes réponses sont gardées (« Nouveau » pour tout effacer).');
+    if (b.ajout) F.toast(b.nombre + ' bâtiments comptés ensemble (Maj + clic pour en ajouter ou en retirer).');
+    else if (garde) F.toast('Bâtiment choisi. Tes réponses sont gardées (« Nouveau » pour tout effacer).');
   }
 
   function surAdresse(a) {
@@ -1054,10 +1167,17 @@
         signature = champ.value.trim();
         F.ecrire('signature.v1', signature);
         afficherClient();
+      } else if (champ.dataset.aides) {
+        const n = F.lireNombre(champ.value);
+        etat.aides = n > 0 ? Math.min(90, n) / 100 : 0;
+        recalculer();
       } else if (champ.dataset.dju) {
         const n = F.lireNombre(champ.value);
         etat.djuFactures = n > 0 ? n : null;
         recalculer();
+      } else if (champ.dataset.importerTout !== undefined && champ.files && champ.files[0]) {
+        importerTout(champ.files[0]);
+        champ.value = '';
       } else if (champ.dataset.importerCas !== undefined && champ.files && champ.files[0]) {
         importerCas(champ.files[0]);
         champ.value = '';
@@ -1078,6 +1198,13 @@
     });
     // Boutons des résultats et des factures
     document.addEventListener('click', function (e) {
+      const info = e.target.closest('[data-info]');
+      if (info) {
+        const texte = info.nextElementSibling, ouvert = info.getAttribute('aria-expanded') === 'true';
+        info.setAttribute('aria-expanded', String(!ouvert));
+        texte.hidden = ouvert;
+        return;
+      }
       const a = e.target.closest('[data-action], [data-bouquet], [data-vue-lien], [data-valider], [data-devalider], [data-ouvrir-cas], [data-supprimer-cas]');
       if (!a) return;
       if (a.dataset.vueLien) { ouvrirVue(a.dataset.vueLien); return; }
@@ -1095,6 +1222,7 @@
       else if (action === 'imprimer') window.print();
       else if (action === 'copier-mail') copierMail();
       else if (action === 'exporter-cas') exporterCas();
+      else if (action === 'exporter-tout') exporterTout();
       else if (action === 'toutes-energies') { toutesEnergies = !toutesEnergies; a.textContent = toutesEnergies ? 'Masquer les énergies inutilisées' : 'Afficher toutes les énergies'; majFactures(); }
     });
     $('#filtre-donnees').addEventListener('input', afficherDonnees);
